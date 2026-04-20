@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="./assets/blaze-agent-demo-slow.jpg" alt="Blaze — AI Agent Payments" width="100%">
+  <img src="./assets/blaze-agent-demo-slow.gif" alt="Blaze — AI Agent Payments" width="100%">
 </p>
 
 <h1 align="center">@blaze-money/cli</h1>
