@@ -1,20 +1,249 @@
 import { Command } from "commander"
 import { BlazeClient } from "../../sdk/client"
-import {
-  resolveApiKey,
-  resolveBaseUrl,
-  saveConfig,
-  loadConfig,
-  detectEnvironment,
-} from "../../sdk/config"
+import { resolveBaseUrl, saveConfig, detectEnvironment } from "../../sdk/config"
 import { handleError } from "../utils"
+import { getAuth, clearAuth, saveAuth, requireAuth } from "../auth-utils"
+
+const API_ENDPOINT = process.env.BLAZE_API_URL || "https://api.blaze.money"
+
+interface DeviceCodeResponse {
+  device_code: string
+  user_code: string
+  verification_uri: string
+  verification_uri_complete: string
+  expires_in: number
+  interval: number
+}
+
+interface TokenResponse {
+  __typename: string
+  access_token?: string
+  token_type?: string
+  expires_in?: number
+  user?: {
+    id: string
+    email?: string
+    blazetag?: string
+  }
+  error?: string
+  error_description?: string
+  interval?: number
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise(resolve => setTimeout(resolve, ms))
+}
 
 export function registerAuthCommands(program: Command): void {
-  const auth = program.command("auth").description("Manage authentication")
+  const auth = program
+    .command("auth")
+    .description("Authenticate with Blaze via browser")
+    .action(async () => {
+      const chalk = (await import("chalk")).default
+      const ora = (await import("ora")).default
+      const open = (await import("open")).default
+
+      // Check if already authenticated
+      const existingAuth = await getAuth()
+      if (existingAuth) {
+        const user = existingAuth.user.email || existingAuth.user.blazetag
+        console.log(
+          chalk.yellow(
+            `\n⚠ Already logged in as ${user}\n\nRun \`blaze logout\` to log out first.\n`
+          )
+        )
+        return
+      }
+
+      const spinner = ora("Requesting device code...").start()
+
+      try {
+        // Step 1: Request device code
+        const deviceCodeRes = await fetch(`${API_ENDPOINT}/graphql`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            query: `
+              mutation GenerateDeviceCode($input: GenerateDeviceCodeInput!) {
+                generateDeviceCode(input: $input) {
+                  device_code
+                  user_code
+                  verification_uri
+                  verification_uri_complete
+                  expires_in
+                  interval
+                }
+              }
+            `,
+            variables: {
+              input: { clientId: "blaze-cli" },
+            },
+          }),
+        })
+
+        if (!deviceCodeRes.ok) {
+          throw new Error(
+            `HTTP ${deviceCodeRes.status}: ${deviceCodeRes.statusText}`
+          )
+        }
+
+        const deviceCodeData = (await deviceCodeRes.json()) as {
+          data?: {
+            generateDeviceCode?: DeviceCodeResponse
+          }
+          errors?: Array<{ message: string }>
+        }
+        if (deviceCodeData.errors) {
+          throw new Error(
+            deviceCodeData.errors[0]?.message ||
+              "Failed to generate device code"
+          )
+        }
+
+        if (!deviceCodeData.data?.generateDeviceCode) {
+          throw new Error("Invalid response from server")
+        }
+
+        const deviceCode: DeviceCodeResponse =
+          deviceCodeData.data.generateDeviceCode
+
+        spinner.stop()
+
+        // Step 2: Display code and open browser
+        console.log(chalk.bold("\n🔐 Authorize Blaze CLI\n"))
+        console.log(`Visit: ${chalk.cyan(deviceCode.verification_uri)}`)
+        console.log(
+          `\nEnter code: ${chalk.yellow.bold(deviceCode.user_code)}\n`
+        )
+
+        // Try to open browser automatically
+        try {
+          await open(deviceCode.verification_uri_complete)
+          console.log(chalk.dim("✓ Opened browser automatically\n"))
+        } catch {
+          console.log(chalk.dim("(Could not open browser automatically)\n"))
+        }
+
+        // Step 3: Poll for authorization
+        spinner.start("Waiting for authorization...")
+
+        const pollInterval = deviceCode.interval * 1000
+        const expiresAt = Date.now() + deviceCode.expires_in * 1000
+
+        while (Date.now() < expiresAt) {
+          await sleep(pollInterval)
+
+          const tokenRes = await fetch(`${API_ENDPOINT}/graphql`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              query: `
+                mutation PollDeviceToken($input: PollDeviceTokenInput!) {
+                  pollDeviceToken(input: $input) {
+                    __typename
+                    ... on DeviceTokenSuccess {
+                      access_token
+                      token_type
+                      expires_in
+                      user {
+                        id
+                        email
+                        blazetag
+                      }
+                    }
+                    ... on DeviceTokenPending {
+                      error
+                      interval
+                    }
+                    ... on DeviceTokenError {
+                      error
+                      error_description
+                    }
+                  }
+                }
+              `,
+              variables: {
+                input: {
+                  device_code: deviceCode.device_code,
+                  clientId: "blaze-cli",
+                },
+              },
+            }),
+          })
+
+          if (!tokenRes.ok) {
+            throw new Error(`HTTP ${tokenRes.status}: ${tokenRes.statusText}`)
+          }
+
+          const tokenData = (await tokenRes.json()) as {
+            data?: { pollDeviceToken?: TokenResponse }
+            errors?: Array<{ message: string }>
+          }
+          if (tokenData.errors) {
+            throw new Error(tokenData.errors[0]?.message || "Polling failed")
+          }
+
+          if (!tokenData.data?.pollDeviceToken) {
+            throw new Error("Invalid response from server")
+          }
+
+          const tokenResponse: TokenResponse = tokenData.data.pollDeviceToken
+
+          // Handle response
+          if (tokenResponse.__typename === "DeviceTokenSuccess") {
+            spinner.succeed(chalk.green("Authorization successful!"))
+
+            // Store token
+            await saveAuth({
+              access_token: tokenResponse.access_token!,
+              token_type: tokenResponse.token_type!,
+              expires_in: tokenResponse.expires_in!,
+              user: tokenResponse.user!,
+              created_at: Date.now(),
+            })
+
+            const user =
+              tokenResponse.user!.email || tokenResponse.user!.blazetag
+            console.log(chalk.green(`\n✓ Logged in as ${user}\n`))
+            return
+          }
+
+          if (tokenResponse.__typename === "DeviceTokenPending") {
+            // Continue polling
+            continue
+          }
+
+          if (tokenResponse.__typename === "DeviceTokenError") {
+            spinner.fail(chalk.red("Authorization failed"))
+            console.error(
+              chalk.red(
+                `\n✗ ${tokenResponse.error_description || tokenResponse.error}\n`
+              )
+            )
+            process.exit(1)
+          }
+        }
+
+        // Timeout
+        spinner.fail(chalk.red("Authorization timed out"))
+        console.error(
+          chalk.red("\n✗ Device code expired. Please run `blaze auth` again.\n")
+        )
+        process.exit(1)
+      } catch (error) {
+        spinner.fail(chalk.red("Authentication failed"))
+        console.error(
+          chalk.red(
+            `\n✗ ${error instanceof Error ? error.message : String(error)}\n`
+          )
+        )
+        process.exit(1)
+      }
+    })
 
   auth
     .command("login")
-    .description("Authenticate with an API key")
+    .description("Authenticate with an API key (legacy)")
     .requiredOption("--api-key <key>", "Your Blaze API key")
     .action(async (opts: { apiKey: string }) => {
       try {
@@ -44,31 +273,39 @@ export function registerAuthCommands(program: Command): void {
 
   auth
     .command("whoami")
-    .description("Display current authentication info")
-    .action(() => {
-      const apiKey = resolveApiKey(program.opts().apiKey as string)
-      if (!apiKey) {
+    .description("Display current authenticated user")
+    .action(async () => {
+      const chalk = (await import("chalk")).default
+      await requireAuth()
+
+      const authData = await getAuth()
+      if (!authData) {
         console.error(
-          "Not authenticated. Run: blaze auth login --api-key <key>"
+          chalk.red("\n✗ Not authenticated. Run `blaze auth` to log in.\n")
         )
         process.exit(1)
       }
 
-      const config = loadConfig()
-      const env = detectEnvironment(apiKey)
-      const masked = maskApiKey(apiKey)
-
-      console.log(`API key:      ${masked}`)
-      console.log(`Environment:  ${env}`)
-      if (config?.base_url) {
-        console.log(`Base URL:     ${config.base_url}`)
-      }
+      console.log(chalk.bold("\nAuthenticated User:\n"))
+      console.log(`Email:    ${authData.user.email || "N/A"}`)
+      console.log(`Blazetag: ${authData.user.blazetag || "N/A"}`)
+      console.log(`User ID:  ${authData.user.id}`)
+      console.log()
     })
-}
 
-function maskApiKey(key: string): string {
-  if (key.length <= 12) return "****"
-  const prefix = key.slice(0, 8)
-  const suffix = key.slice(-4)
-  return `${prefix}****${suffix}`
+  auth
+    .command("logout")
+    .description("Log out of Blaze CLI")
+    .action(async () => {
+      const chalk = (await import("chalk")).default
+      const authData = await getAuth()
+
+      if (!authData) {
+        console.log(chalk.yellow("\n⚠ Not currently logged in\n"))
+        return
+      }
+
+      await clearAuth()
+      console.log(chalk.green("\n✓ Logged out successfully\n"))
+    })
 }

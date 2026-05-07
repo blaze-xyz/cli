@@ -15,7 +15,7 @@ export function registerWithdrawalsCommands(program: Command): void {
     .action(async (opts: { limit?: number }) => {
       try {
         const globals = getGlobalOpts(program)
-        const client = getClient(globals)
+        const client = await getClient(globals)
         const result = await client.listWithdrawals({
           limit: opts.limit,
         })
@@ -31,7 +31,7 @@ export function registerWithdrawalsCommands(program: Command): void {
     .action(async (id: string) => {
       try {
         const globals = getGlobalOpts(program)
-        const client = getClient(globals)
+        const client = await getClient(globals)
         const withdrawal = await client.getWithdrawal(id)
         formatOutput(withdrawal, globals.format)
       } catch (err) {
@@ -58,7 +58,7 @@ export function registerWithdrawalsCommands(program: Command): void {
       }) => {
         try {
           const globals = getGlobalOpts(program)
-          const client = getClient(globals)
+          const client = await getClient(globals)
           const withdrawal = await client.createWithdrawal({
             amount: opts.amount,
             external_account_id: opts.externalAccountId,

@@ -13,7 +13,7 @@ export function registerDisputesCommands(program: Command): void {
     .action(async (opts: { limit?: number; status?: string }) => {
       try {
         const globals = getGlobalOpts(program)
-        const client = getClient(globals)
+        const client = await getClient(globals)
         const result = await client.listDisputes({
           limit: opts.limit,
           status: opts.status,
@@ -30,7 +30,7 @@ export function registerDisputesCommands(program: Command): void {
     .action(async (id: string) => {
       try {
         const globals = getGlobalOpts(program)
-        const client = getClient(globals)
+        const client = await getClient(globals)
         const result = await client.getDispute(id)
         formatOutput(result, globals.format)
       } catch (err) {
@@ -50,7 +50,7 @@ export function registerDisputesCommands(program: Command): void {
       ) => {
         try {
           const globals = getGlobalOpts(program)
-          const client = getClient(globals)
+          const client = await getClient(globals)
           const result = await client.submitDisputeEvidence(id, {
             description: opts.description,
             document_urls: opts.documentUrls
@@ -70,7 +70,7 @@ export function registerDisputesCommands(program: Command): void {
     .action(async (id: string) => {
       try {
         const globals = getGlobalOpts(program)
-        const client = getClient(globals)
+        const client = await getClient(globals)
         const result = await client.closeDispute(id)
         formatOutput(result, globals.format)
       } catch (err) {

@@ -6,6 +6,7 @@ export interface BlazeConfig {
   api_key: string
   base_url?: string
   environment?: "test" | "live"
+  activeBusinessId?: string
 }
 
 const CONFIG_DIR = path.join(os.homedir(), ".blaze")

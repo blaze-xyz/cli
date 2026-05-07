@@ -13,7 +13,7 @@ export function registerCustomersCommands(program: Command): void {
     .action(async (opts: { limit?: number; email?: string }) => {
       try {
         const globals = getGlobalOpts(program)
-        const client = getClient(globals)
+        const client = await getClient(globals)
         const result = await client.listCustomers({
           limit: opts.limit,
           email: opts.email,
@@ -30,7 +30,7 @@ export function registerCustomersCommands(program: Command): void {
     .action(async (id: string) => {
       try {
         const globals = getGlobalOpts(program)
-        const client = getClient(globals)
+        const client = await getClient(globals)
         const customer = await client.getCustomer(id)
         formatOutput(customer, globals.format)
       } catch (err) {
@@ -54,7 +54,7 @@ export function registerCustomersCommands(program: Command): void {
       }) => {
         try {
           const globals = getGlobalOpts(program)
-          const client = getClient(globals)
+          const client = await getClient(globals)
           const customer = await client.createCustomer({
             email: opts.email,
             first_name: opts.firstName,
@@ -81,7 +81,7 @@ export function registerCustomersCommands(program: Command): void {
       ) => {
         try {
           const globals = getGlobalOpts(program)
-          const client = getClient(globals)
+          const client = await getClient(globals)
           const customer = await client.updateCustomer(id, {
             first_name: opts.firstName,
             last_name: opts.lastName,
@@ -100,7 +100,7 @@ export function registerCustomersCommands(program: Command): void {
     .action(async (id: string) => {
       try {
         const globals = getGlobalOpts(program)
-        const client = getClient(globals)
+        const client = await getClient(globals)
         await client.archiveCustomer(id)
         console.log(`Customer ${id} archived.`)
       } catch (err) {

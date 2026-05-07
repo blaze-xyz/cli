@@ -58,17 +58,26 @@ import type {
 } from "./types"
 
 export interface BlazeClientOptions {
-  apiKey: string
+  apiKey?: string
+  bearerToken?: string
   baseUrl?: string
+  defaultHeaders?: Record<string, string>
 }
 
 export class BlazeClient {
-  private apiKey: string
+  private apiKey: string | undefined
+  private bearerToken: string | undefined
   private baseUrl: string
+  private defaultHeaders: Record<string, string>
 
   constructor(opts: BlazeClientOptions) {
+    if (!opts.apiKey && !opts.bearerToken) {
+      throw new Error("BlazeClient requires either apiKey or bearerToken")
+    }
     this.apiKey = opts.apiKey
+    this.bearerToken = opts.bearerToken
     this.baseUrl = opts.baseUrl ?? "https://api.blaze.money"
+    this.defaultHeaders = opts.defaultHeaders ?? {}
   }
 
   private async request<T>(
@@ -78,8 +87,13 @@ export class BlazeClient {
   ): Promise<T> {
     const url = `${this.baseUrl}${path}`
     const headers: Record<string, string> = {
-      "X-API-Key": this.apiKey,
       "Content-Type": "application/json",
+      ...this.defaultHeaders,
+    }
+    if (this.bearerToken) {
+      headers["Authorization"] = `Bearer ${this.bearerToken}`
+    } else if (this.apiKey) {
+      headers["X-API-Key"] = this.apiKey
     }
 
     const res = await fetch(url, {
@@ -93,7 +107,13 @@ export class BlazeClient {
         string,
         unknown
       >
-      const msg = (errorBody.message as string) ?? undefined
+      const rawMsg = errorBody.message
+      const msg =
+        typeof rawMsg === "string"
+          ? rawMsg
+          : rawMsg
+            ? JSON.stringify(rawMsg)
+            : undefined
       switch (res.status) {
         case 401:
           throw new BlazeAuthenticationError(msg ?? "Authentication failed")
@@ -133,6 +153,11 @@ export class BlazeClient {
     }
     const qs = searchParams.toString()
     return qs ? `?${qs}` : ""
+  }
+
+  // Generic HTTP helpers for endpoints not covered by typed methods
+  async get<T = unknown>(path: string): Promise<T> {
+    return this.request<T>("GET", path)
   }
 
   // Balance
@@ -508,5 +533,57 @@ export class BlazeClient {
     amount: number
   }): Promise<FxQuote> {
     return this.request<FxQuote>("POST", "/v1/fx/quotes", data)
+  }
+
+  // Profile (consumer)
+  async getMe(): Promise<unknown> {
+    return this.request<unknown>("GET", "/v1/me")
+  }
+
+  async updateMe(data: unknown): Promise<unknown> {
+    return this.request<unknown>("PATCH", "/v1/me", data)
+  }
+
+  async setBlazetag(blazetag: string): Promise<unknown> {
+    return this.request<unknown>("PUT", "/v1/me/blazetag", { blazetag })
+  }
+
+  // Contacts (consumer recipients)
+  async listContacts(params?: {
+    search?: string
+    limit?: number
+  }): Promise<unknown> {
+    return this.request<unknown>(
+      "GET",
+      `/v1/recipients${this.buildQuery(params)}`
+    )
+  }
+
+  async createContact(data: unknown): Promise<unknown> {
+    return this.request<unknown>("POST", "/v1/recipients", data)
+  }
+
+  async deleteContact(id: string): Promise<unknown> {
+    return this.request<unknown>("DELETE", `/v1/recipients/${id}`)
+  }
+
+  async payContact(id: string, data: unknown): Promise<unknown> {
+    return this.request<unknown>("POST", `/v1/recipients/${id}/transfers`, data)
+  }
+
+  // Payments (P2P)
+  async sendPayment(data: unknown): Promise<unknown> {
+    return this.request<unknown>("POST", "/v1/payments", data)
+  }
+
+  async listPayments(params?: { limit?: number }): Promise<unknown> {
+    return this.request<unknown>(
+      "GET",
+      `/v1/payments${this.buildQuery(params)}`
+    )
+  }
+
+  async getPayment(id: string): Promise<unknown> {
+    return this.request<unknown>("GET", `/v1/payments/${id}`)
   }
 }

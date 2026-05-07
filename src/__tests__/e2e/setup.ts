@@ -1,6 +1,7 @@
 import { BlazeClient } from "../../sdk/client"
 
 export const SKIP_E2E = !process.env.BLAZE_TEST_API_KEY
+export const SKIP_CONSUMER_E2E = !process.env.BLAZE_TEST_JWT
 
 export class TestContext {
   client: BlazeClient

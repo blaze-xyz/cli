@@ -13,7 +13,7 @@ export function registerApiKeysCommands(program: Command): void {
     .action(async () => {
       try {
         const globals = getGlobalOpts(program)
-        const client = getClient(globals)
+        const client = await getClient(globals)
         const result = await client.listApiKeys()
         formatOutput(result.data, globals.format)
       } catch (err) {
@@ -37,7 +37,7 @@ export function registerApiKeysCommands(program: Command): void {
       }) => {
         try {
           const globals = getGlobalOpts(program)
-          const client = getClient(globals)
+          const client = await getClient(globals)
           const result = await client.createApiKey({
             name: opts.name,
             scopes: opts.scopes
@@ -63,7 +63,7 @@ export function registerApiKeysCommands(program: Command): void {
     .action(async (id: string, opts: { scopes: string }) => {
       try {
         const globals = getGlobalOpts(program)
-        const client = getClient(globals)
+        const client = await getClient(globals)
         const result = await client.updateApiKeyScopes(id, {
           scopes: opts.scopes
             .split(",")
@@ -92,7 +92,7 @@ export function registerApiKeysCommands(program: Command): void {
           }
         }
         const globals = getGlobalOpts(program)
-        const client = getClient(globals)
+        const client = await getClient(globals)
         await client.revokeApiKey(id, opts.reason)
         console.log(`API key ${id} revoked.`)
       } catch (err) {

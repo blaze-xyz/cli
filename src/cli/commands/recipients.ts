@@ -15,7 +15,7 @@ export function registerRecipientsCommands(program: Command): void {
     .action(async (opts: { customerId: string }) => {
       try {
         const globals = getGlobalOpts(program)
-        const client = getClient(globals)
+        const client = await getClient(globals)
         const result = await client.listExternalAccounts(opts.customerId)
         formatOutput(result.data, globals.format)
       } catch (err) {
@@ -57,7 +57,7 @@ export function registerRecipientsCommands(program: Command): void {
       }) => {
         try {
           const globals = getGlobalOpts(program)
-          const client = getClient(globals)
+          const client = await getClient(globals)
           const account = await client.createExternalAccount(opts.customerId, {
             type: opts.type as ExternalAccountType,
             account_holder_name: opts.accountHolderName,
@@ -84,7 +84,7 @@ export function registerRecipientsCommands(program: Command): void {
     .action(async (opts: { customerId: string; accountId: string }) => {
       try {
         const globals = getGlobalOpts(program)
-        const client = getClient(globals)
+        const client = await getClient(globals)
         await client.deleteExternalAccount(opts.customerId, opts.accountId)
         console.log(`External account ${opts.accountId} removed.`)
       } catch (err) {

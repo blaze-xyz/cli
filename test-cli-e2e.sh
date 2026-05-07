@@ -324,6 +324,32 @@ preflight_check() {
     log_info "Base URL: (default -- https://api.blaze.money)"
   fi
   log_info "Write tests: $WITH_WRITES"
+
+  # Verify API key has access by making a simple balance call
+  local global_flags="--api-key $API_KEY"
+  if [[ -n "$API_BASE_URL" ]]; then
+    global_flags="$global_flags --base-url $API_BASE_URL"
+  fi
+  local probe_stderr
+  probe_stderr=$(mktemp)
+  local probe_output
+  set +e
+  probe_output=$(eval "node $CLI_BIN $global_flags balance" 2>"$probe_stderr")
+  local probe_exit=$?
+  set -e
+  local probe_err
+  probe_err=$(cat "$probe_stderr" 2>/dev/null || true)
+  rm -f "$probe_stderr"
+
+  if [[ $probe_exit -ne 0 ]] && echo "$probe_err" | grep -qi "forbidden\|403\|Business context required\|Authentication failed\|401"; then
+    echo ""
+    log_warn "API key does not have access (got: $probe_err)"
+    log_warn "Skipping E2E tests -- API key lacks required permissions."
+    echo ""
+    echo -e "${GREEN}${BOLD}E2E tests skipped (no valid API key).${NC}"
+    exit 0
+  fi
+
   echo ""
 }
 

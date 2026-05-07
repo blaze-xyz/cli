@@ -14,7 +14,7 @@ export function registerAccountsCommands(program: Command): void {
     .action(async (opts: { customerId: string }) => {
       try {
         const globals = getGlobalOpts(program)
-        const client = getClient(globals)
+        const client = await getClient(globals)
         const result = await client.listVirtualAccounts(opts.customerId)
         formatOutput(result.data, globals.format)
       } catch (err) {
@@ -30,7 +30,7 @@ export function registerAccountsCommands(program: Command): void {
     .action(async (opts: { customerId: string; vaId: string }) => {
       try {
         const globals = getGlobalOpts(program)
-        const client = getClient(globals)
+        const client = await getClient(globals)
         const account = await client.getVirtualAccount(
           opts.customerId,
           opts.vaId
@@ -49,7 +49,7 @@ export function registerAccountsCommands(program: Command): void {
     .action(async (opts: { customerId: string; nickname?: string }) => {
       try {
         const globals = getGlobalOpts(program)
-        const client = getClient(globals)
+        const client = await getClient(globals)
         const account = await client.createVirtualAccount(opts.customerId, {
           nickname: opts.nickname,
         })

@@ -18,7 +18,7 @@ export function registerAnalyticsCommands(program: Command): void {
     .action(async (opts: { period?: string }) => {
       try {
         const globals = getGlobalOpts(program)
-        const client = getClient(globals)
+        const client = await getClient(globals)
         const result = await client.getAnalyticsOverview(
           opts.period as AnalyticsPeriod | undefined
         )

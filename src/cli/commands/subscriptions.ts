@@ -21,7 +21,7 @@ export function registerSubscriptionsCommands(program: Command): void {
       }) => {
         try {
           const globals = getGlobalOpts(program)
-          const client = getClient(globals)
+          const client = await getClient(globals)
           const result = await client.listSubscriptions({
             limit: opts.limit,
             status: opts.status,
@@ -40,7 +40,7 @@ export function registerSubscriptionsCommands(program: Command): void {
     .action(async (id: string) => {
       try {
         const globals = getGlobalOpts(program)
-        const client = getClient(globals)
+        const client = await getClient(globals)
         const result = await client.getSubscription(id)
         formatOutput(result, globals.format)
       } catch (err) {
@@ -62,7 +62,7 @@ export function registerSubscriptionsCommands(program: Command): void {
       }) => {
         try {
           const globals = getGlobalOpts(program)
-          const client = getClient(globals)
+          const client = await getClient(globals)
           const result = await client.createSubscription({
             customer_id: opts.customerId,
             product_id: opts.productId,
@@ -82,7 +82,7 @@ export function registerSubscriptionsCommands(program: Command): void {
     .action(async (id: string, opts: { immediately?: boolean }) => {
       try {
         const globals = getGlobalOpts(program)
-        const client = getClient(globals)
+        const client = await getClient(globals)
         const result = await client.cancelSubscription(id, opts.immediately)
         formatOutput(result, globals.format)
       } catch (err) {
@@ -96,7 +96,7 @@ export function registerSubscriptionsCommands(program: Command): void {
     .action(async (id: string) => {
       try {
         const globals = getGlobalOpts(program)
-        const client = getClient(globals)
+        const client = await getClient(globals)
         const result = await client.pauseSubscription(id)
         formatOutput(result, globals.format)
       } catch (err) {
@@ -110,7 +110,7 @@ export function registerSubscriptionsCommands(program: Command): void {
     .action(async (id: string) => {
       try {
         const globals = getGlobalOpts(program)
-        const client = getClient(globals)
+        const client = await getClient(globals)
         const result = await client.resumeSubscription(id)
         formatOutput(result, globals.format)
       } catch (err) {

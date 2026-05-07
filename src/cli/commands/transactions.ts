@@ -17,7 +17,7 @@ export function registerTransactionsCommands(program: Command): void {
       async (opts: { limit?: number; type?: string; status?: string }) => {
         try {
           const globals = getGlobalOpts(program)
-          const client = getClient(globals)
+          const client = await getClient(globals)
           const result = await client.listTransactions({
             limit: opts.limit,
             type: opts.type,
@@ -36,7 +36,7 @@ export function registerTransactionsCommands(program: Command): void {
     .action(async (id: string) => {
       try {
         const globals = getGlobalOpts(program)
-        const client = getClient(globals)
+        const client = await getClient(globals)
         const transaction = await client.getTransaction(id)
         formatOutput(transaction, globals.format)
       } catch (err) {

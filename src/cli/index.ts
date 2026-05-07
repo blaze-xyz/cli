@@ -3,6 +3,7 @@ import { Command } from "commander"
 import { agentCommand } from "./commands/agent"
 import { registerAuthCommands } from "./commands/auth"
 import { registerBalanceCommand } from "./commands/balance"
+import { registerBusinessesCommands } from "./commands/businesses"
 import { registerCustomersCommands } from "./commands/customers"
 import { registerRecipientsCommands } from "./commands/recipients"
 import { registerTransfersCommands } from "./commands/transfers"
@@ -19,6 +20,11 @@ import { registerInvoicesCommands } from "./commands/invoices"
 import { registerSubscriptionsCommands } from "./commands/subscriptions"
 import { registerFxCommands } from "./commands/fx"
 import { registerSetupCommand } from "./commands/setup"
+import { registerMeCommands } from "./commands/me"
+import { registerSendCommand } from "./commands/send"
+import { registerContactsCommands } from "./commands/contacts"
+import { registerPaymentsCommands } from "./commands/payments"
+import { registerMemoryCommands } from "./commands/memory"
 
 const program = new Command()
 
@@ -28,10 +34,11 @@ program
   .version("0.1.0")
   .option("--api-key <key>", "API key (overrides config)")
   .option("--base-url <url>", "API base URL")
-  .option("--format <format>", "Output format: json or table", "json")
+  .option("--format <format>", "Output format: json or table", "table")
 
 registerAuthCommands(program)
 registerBalanceCommand(program)
+registerBusinessesCommands(program)
 registerCustomersCommands(program)
 registerRecipientsCommands(program)
 registerTransfersCommands(program)
@@ -49,5 +56,10 @@ registerInvoicesCommands(program)
 registerSubscriptionsCommands(program)
 registerFxCommands(program)
 registerSetupCommand(program)
+registerMeCommands(program)
+registerSendCommand(program)
+registerContactsCommands(program)
+registerPaymentsCommands(program)
+registerMemoryCommands(program)
 
 program.parse()

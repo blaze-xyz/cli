@@ -15,7 +15,7 @@ export function registerPaylinksCommands(program: Command): void {
     .action(async (opts: { limit?: number }) => {
       try {
         const globals = getGlobalOpts(program)
-        const client = getClient(globals)
+        const client = await getClient(globals)
         const result = await client.listPaymentLinks({
           limit: opts.limit,
         })
@@ -31,7 +31,7 @@ export function registerPaylinksCommands(program: Command): void {
     .action(async (id: string) => {
       try {
         const globals = getGlobalOpts(program)
-        const client = getClient(globals)
+        const client = await getClient(globals)
         const link = await client.getPaymentLink(id)
         formatOutput(link, globals.format)
       } catch (err) {
@@ -55,7 +55,7 @@ export function registerPaylinksCommands(program: Command): void {
       }) => {
         try {
           const globals = getGlobalOpts(program)
-          const client = getClient(globals)
+          const client = await getClient(globals)
           const link = await client.createPaymentLink({
             amount: opts.amount,
             currency: opts.currency as Currency | undefined,
@@ -77,7 +77,7 @@ export function registerPaylinksCommands(program: Command): void {
     .action(async (id: string, opts: { name?: string; note?: string }) => {
       try {
         const globals = getGlobalOpts(program)
-        const client = getClient(globals)
+        const client = await getClient(globals)
         const link = await client.updatePaymentLink(id, {
           name: opts.name,
           note: opts.note,
@@ -94,7 +94,7 @@ export function registerPaylinksCommands(program: Command): void {
     .action(async (id: string) => {
       try {
         const globals = getGlobalOpts(program)
-        const client = getClient(globals)
+        const client = await getClient(globals)
         await client.cancelPaymentLink(id)
         console.log(`Payment link ${id} cancelled.`)
       } catch (err) {

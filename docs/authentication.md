@@ -1,8 +1,84 @@
 # Authentication
 
-All Blaze API operations require an API key. This document covers how to obtain a key, how the CLI resolves credentials, and security best practices.
+The Blaze CLI supports two authentication methods: **browser-based OAuth** (recommended) and **API keys** (for programmatic access). This document covers both methods, credential resolution, and security best practices.
 
-## Getting an API Key
+---
+
+## Browser-Based Authentication (Recommended)
+
+The recommended way to authenticate the Blaze CLI is through your browser using OAuth 2.0 Device Flow, similar to GitHub CLI and Vercel CLI.
+
+### Quick Start
+
+Run the following command to authenticate:
+
+```bash
+blaze auth
+```
+
+**What happens:**
+1. The CLI generates a unique device code (e.g., `WDJB-MJHT`)
+2. Your browser automatically opens to `https://blaze.money/cli-auth`
+3. Log in to your Blaze account (if not already logged in)
+4. The device code is pre-filled — just click "Authorize"
+5. The CLI receives your credentials and stores them securely
+
+**Example output:**
+
+```
+🔐 Authorize Blaze CLI
+
+Visit: https://blaze.money/cli-auth
+
+Enter code: WDJB-MJHT
+
+✓ Opened browser automatically
+
+⠋ Waiting for authorization...
+
+✓ Authorization successful!
+
+✓ Logged in as user@example.com
+```
+
+### Managing Authentication
+
+```bash
+# Check who you're logged in as
+blaze auth whoami
+
+# Log out and clear credentials
+blaze auth logout
+```
+
+### Where Credentials Are Stored
+
+Browser-based authentication stores your OAuth token in:
+
+```
+~/.config/blaze-cli/config.json
+```
+
+The token:
+- Expires after 30 days
+- Is tied to your Blaze account
+- Automatically refreshes when needed
+- Can be revoked from your Blaze dashboard
+
+### Benefits of Browser-Based Auth
+
+✅ **More secure** — No API keys to manage or accidentally expose  
+✅ **Easier** — No need to copy/paste keys from the dashboard  
+✅ **Automatic** — Browser opens automatically with the code pre-filled  
+✅ **Revocable** — Manage CLI access from your dashboard
+
+---
+
+## API Key Authentication
+
+For programmatic access (CI/CD pipelines, scripts, server environments), use API keys.
+
+### Getting an API Key
 
 API keys are issued from the Blaze dashboard at [https://dashboard.blaze.money](https://dashboard.blaze.money). Navigate to **Settings > API Keys** to create a new key.
 
@@ -17,9 +93,9 @@ The CLI automatically detects which environment you are using based on the key p
 
 ---
 
-## Three Methods of Authentication
+## Three Methods of Providing API Keys
 
-The CLI supports three ways to provide an API key. They are checked in the following order -- the first one found wins.
+When using API key authentication, the CLI supports three ways to provide a key. They are checked in the following order -- the first one found wins.
 
 ### 1. CLI Flag (highest priority)
 
@@ -44,41 +120,78 @@ This is the recommended approach for CI/CD pipelines, Docker containers, and ser
 
 ### 3. Config File (lowest priority)
 
-Save the key to the local config file using `blaze auth login`.
+Save the key to the local config file using `blaze auth login` (legacy method):
 
 ```bash
 blaze auth login --api-key sk_test_your_key_here
 ```
 
-The key is stored in `~/.blaze/config.json` and used automatically for all subsequent commands.
+<Note>
+  **Deprecated:** This method stores the API key in plain text. Use browser-based authentication (`blaze auth`) or environment variables instead.
+</Note>
 
 ---
 
-## Resolution Order
+## Authentication Resolution Order
 
-When the CLI needs an API key, it checks these sources in order:
+When the CLI needs credentials, it checks these sources in order:
 
 ```
-1. --api-key flag     (if provided)
-2. BLAZE_API_KEY      (environment variable)
-3. ~/.blaze/config.json  (saved config file)
+1. --api-key flag              (if provided)
+2. BLAZE_API_KEY               (environment variable)
+3. ~/.config/blaze-cli/config.json  (OAuth token from browser auth)
+4. ~/.blaze/config.json        (legacy API key storage)
 ```
 
-The first non-empty value found is used. If no key is found through any method, the command exits with an error.
+The first valid credential found is used. If no credentials are found through any method, the command exits with an error prompting you to run `blaze auth`.
 
 ---
 
-## Config File
+## Config Files
 
-### Location
+### Browser-Based Auth Config
 
+**Location:** `~/.config/blaze-cli/config.json`
+
+This file is created automatically when you run `blaze auth` (browser-based authentication).
+
+**Format:**
+
+```json
+{
+  "auth": {
+    "access_token": "eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9...",
+    "token_type": "Bearer",
+    "expires_in": 2592000,
+    "user": {
+      "id": "usr_abc123",
+      "email": "user@example.com",
+      "blazetag": "@user"
+    },
+    "created_at": 1704067200000
+  }
+}
 ```
-~/.blaze/config.json
-```
 
-The `~/.blaze/` directory and config file are created automatically when you run `blaze auth login`.
+| Field | Type | Description |
+|-------|------|-------------|
+| `access_token` | `string` | JWT token for API authentication |
+| `token_type` | `string` | Always "Bearer" |
+| `expires_in` | `number` | Token lifetime in seconds (30 days) |
+| `user` | `object` | Authenticated user information |
+| `created_at` | `number` | Unix timestamp when token was issued |
 
-### Format
+<Warning>
+  Do not manually edit this file. Use `blaze auth` to authenticate and `blaze auth logout` to clear credentials.
+</Warning>
+
+### Legacy API Key Config
+
+**Location:** `~/.blaze/config.json`
+
+This file is created when you run `blaze auth login --api-key` (deprecated).
+
+**Format:**
 
 ```json
 {
@@ -93,10 +206,6 @@ The `~/.blaze/` directory and config file are created automatically when you run
 | `api_key` | `string` | Your Blaze API key |
 | `base_url` | `string` | API base URL (optional, defaults to `https://api.blaze.money`) |
 | `environment` | `"test" \| "live"` | Detected automatically from the key prefix |
-
-### Manual Editing
-
-You can edit `~/.blaze/config.json` directly if needed. The file is plain JSON.
 
 ---
 
@@ -113,7 +222,11 @@ The base URL variable follows the same precedence as the API key: the `--base-ur
 
 ## Test vs Live Mode
 
-The CLI detects the environment from the API key prefix:
+### Browser-Based Auth
+When using `blaze auth` (browser authentication), the CLI uses the environment associated with your Blaze account. You can switch environments from your dashboard.
+
+### API Key Auth
+When using API keys, the CLI detects the environment from the key prefix:
 
 | Prefix | Environment | Behavior |
 |--------|-------------|----------|
@@ -126,6 +239,16 @@ You can verify which environment you are using at any time:
 blaze auth whoami
 ```
 
+**Output (browser-based auth):**
+```
+Authenticated User:
+
+Email:    user@example.com
+Blazetag: @user
+User ID:  usr_abc123
+```
+
+**Output (API key auth):**
 ```
 Authenticated
 Environment: test
@@ -147,14 +270,21 @@ See [MCP Server Setup](./mcp.md) for configuration examples.
 
 ## Security Best Practices
 
-**Never commit API keys to version control.** Add your config file to `.gitignore`:
+### For Interactive Use (Development)
 
-```
-# .gitignore
-.blaze/
+**Use browser-based authentication.** Run `blaze auth` to authenticate via OAuth. This is more secure than storing API keys in config files.
+
+**Log out when done.** If you're on a shared machine, run `blaze auth logout` to clear your credentials.
+
+**Protect config files.** The CLI stores tokens in `~/.config/blaze-cli/config.json`. Ensure this file has appropriate permissions:
+
+```bash
+chmod 600 ~/.config/blaze-cli/config.json
 ```
 
-**Use environment variables in CI/CD.** Set `BLAZE_API_KEY` as a secret in your CI provider (GitHub Actions, GitLab CI, etc.) rather than hardcoding it in scripts.
+### For Programmatic Use (CI/CD, Servers)
+
+**Use environment variables.** Set `BLAZE_API_KEY` as a secret in your CI provider (GitHub Actions, GitLab CI, etc.) rather than hardcoding it in scripts.
 
 ```yaml
 # GitHub Actions example
@@ -162,14 +292,22 @@ env:
   BLAZE_API_KEY: ${{ secrets.BLAZE_API_KEY }}
 ```
 
+**Never commit API keys to version control.** Add config files to `.gitignore`:
+
+```
+# .gitignore
+.blaze/
+.config/blaze-cli/
+```
+
 **Use test keys during development.** Test keys (`sk_test_*`) operate in a sandbox environment and never move real funds. Only use live keys (`sk_live_*`) in production.
 
 **Rotate keys if compromised.** If you suspect a key has been exposed, revoke it immediately in the Blaze dashboard and generate a new one.
 
-**Restrict key permissions.** If the Blaze dashboard supports scoped permissions, create keys with only the permissions your application needs. A key that only needs to read transactions should not have write access to transfers.
+**Restrict key permissions.** Create API keys with only the scopes your application needs. A key that only needs to read transactions should not have write access to transfers.
 
-**Keep the config file private.** The `~/.blaze/config.json` file contains your API key in plain text. Ensure the file has appropriate permissions:
-
-```bash
-chmod 600 ~/.blaze/config.json
-```
+**Prefer OAuth tokens over API keys.** When possible, use browser-based authentication (`blaze auth`) rather than long-lived API keys. OAuth tokens:
+- Expire after 30 days (automatic rotation)
+- Can be revoked from your dashboard
+- Are tied to your user account (audit trail)
+- Don't require manual key management

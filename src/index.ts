@@ -9,3 +9,7 @@ export {
   BlazeValidationError,
   BlazeRateLimitError,
 } from "./sdk/errors"
+
+// Agent orchestrator exports
+export { BlazeOrchestrator } from "./agent/orchestrator"
+export type { OrchestratorConfig } from "./agent/orchestrator"

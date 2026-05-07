@@ -19,7 +19,7 @@ export function registerInvoicesCommands(program: Command): void {
       }) => {
         try {
           const globals = getGlobalOpts(program)
-          const client = getClient(globals)
+          const client = await getClient(globals)
           const result = await client.listInvoices({
             limit: opts.limit,
             status: opts.status,
@@ -38,7 +38,7 @@ export function registerInvoicesCommands(program: Command): void {
     .action(async (id: string) => {
       try {
         const globals = getGlobalOpts(program)
-        const client = getClient(globals)
+        const client = await getClient(globals)
         const result = await client.getInvoice(id)
         formatOutput(result, globals.format)
       } catch (err) {
@@ -66,7 +66,7 @@ export function registerInvoicesCommands(program: Command): void {
       }) => {
         try {
           const globals = getGlobalOpts(program)
-          const client = getClient(globals)
+          const client = await getClient(globals)
           const result = await client.createInvoice({
             customer_id: opts.customerId,
             line_items: JSON.parse(opts.lineItems),
@@ -88,7 +88,7 @@ export function registerInvoicesCommands(program: Command): void {
     .action(async (id: string) => {
       try {
         const globals = getGlobalOpts(program)
-        const client = getClient(globals)
+        const client = await getClient(globals)
         const result = await client.sendInvoice(id)
         formatOutput(result, globals.format)
       } catch (err) {
@@ -102,7 +102,7 @@ export function registerInvoicesCommands(program: Command): void {
     .action(async (id: string) => {
       try {
         const globals = getGlobalOpts(program)
-        const client = getClient(globals)
+        const client = await getClient(globals)
         const result = await client.markInvoicePaid(id)
         formatOutput(result, globals.format)
       } catch (err) {
@@ -116,7 +116,7 @@ export function registerInvoicesCommands(program: Command): void {
     .action(async (id: string) => {
       try {
         const globals = getGlobalOpts(program)
-        const client = getClient(globals)
+        const client = await getClient(globals)
         const result = await client.voidInvoice(id)
         formatOutput(result, globals.format)
       } catch (err) {

@@ -9,7 +9,7 @@ export function registerBalanceCommand(program: Command): void {
     .action(async () => {
       try {
         const globals = getGlobalOpts(program)
-        const client = getClient(globals)
+        const client = await getClient(globals)
         const balance = await client.getBalance()
         formatOutput(balance, globals.format)
       } catch (err) {

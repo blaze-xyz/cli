@@ -13,7 +13,7 @@ export function registerFxCommands(program: Command): void {
     .action(async (opts: { base?: string }) => {
       try {
         const globals = getGlobalOpts(program)
-        const client = getClient(globals)
+        const client = await getClient(globals)
         const result = await client.getFxRates(opts.base)
         formatOutput(result, globals.format)
       } catch (err) {
@@ -29,7 +29,7 @@ export function registerFxCommands(program: Command): void {
     .action(async (opts: { from: string; to: string; amount: number }) => {
       try {
         const globals = getGlobalOpts(program)
-        const client = getClient(globals)
+        const client = await getClient(globals)
         const result = await client.createFxQuote({
           from_currency: opts.from,
           to_currency: opts.to,

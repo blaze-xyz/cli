@@ -4,6 +4,7 @@ import { BlazeGraphQLClient } from "../../sdk/graphql"
 import { BlazeClient } from "../../sdk/client"
 import { saveConfig, detectEnvironment, loadConfig } from "../../sdk/config"
 import { handleError } from "../utils"
+import { saveAuth } from "../auth-utils"
 
 // ---------------------------------------------------------------------------
 // GraphQL operations
@@ -139,6 +140,11 @@ async function runSetup(): Promise<void> {
     message: "How would you like to authenticate?",
     choices: [
       {
+        name: "Authenticate via browser (recommended)",
+        value: "browser" as const,
+        description: "Opens your browser for secure OAuth authentication",
+      },
+      {
         name: "I have a JWT token (from the Blaze app)",
         value: "jwt" as const,
       },
@@ -156,6 +162,30 @@ async function runSetup(): Promise<void> {
         : []),
     ],
   })
+
+  if (authMethod === "browser") {
+    // Browser-based OAuth authentication
+    console.log("")
+    console.log("  Opening browser for authentication...")
+    console.log("")
+
+    try {
+      await runBrowserAuth()
+      console.log("")
+      console.log("  ✓ Authentication successful!")
+      console.log("")
+      console.log("  Setup complete! You're ready to use the Blaze CLI.")
+      console.log("")
+      return
+    } catch (err) {
+      console.error("")
+      console.error(
+        `  Authentication failed: ${err instanceof Error ? err.message : "Unknown error"}`
+      )
+      console.error("  Please try again or use an API key instead.")
+      process.exit(1)
+    }
+  }
 
   if (authMethod === "api_key") {
     // Fast path: user already has an API key, just save and verify.
@@ -456,4 +486,202 @@ function formatCurrency(amount: number, currency: string): string {
   } catch {
     return `${amount} ${currency}`
   }
+}
+
+async function runBrowserAuth(): Promise<void> {
+  const API_ENDPOINT = process.env.BLAZE_API_URL || "https://api.blaze.money"
+
+  const chalk = (await import("chalk")).default
+  const ora = (await import("ora")).default
+  const open = (await import("open")).default
+
+  const spinner = ora("Requesting device code...").start()
+
+  try {
+    // Step 1: Request device code
+    const deviceCodeRes = await fetch(`${API_ENDPOINT}/graphql`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        query: `
+          mutation GenerateDeviceCode($input: GenerateDeviceCodeInput!) {
+            generateDeviceCode(input: $input) {
+              device_code
+              user_code
+              verification_uri
+              verification_uri_complete
+              expires_in
+              interval
+            }
+          }
+        `,
+        variables: {
+          input: { clientId: "blaze-cli" },
+        },
+      }),
+    })
+
+    if (!deviceCodeRes.ok) {
+      throw new Error(
+        `HTTP ${deviceCodeRes.status}: ${deviceCodeRes.statusText}`
+      )
+    }
+
+    interface DeviceCodeResponse {
+      device_code: string
+      user_code: string
+      verification_uri: string
+      verification_uri_complete: string
+      expires_in: number
+      interval: number
+    }
+
+    const deviceCodeData = (await deviceCodeRes.json()) as {
+      data?: {
+        generateDeviceCode?: DeviceCodeResponse
+      }
+      errors?: Array<{ message: string }>
+    }
+    if (deviceCodeData.errors) {
+      throw new Error(
+        deviceCodeData.errors[0]?.message || "Failed to generate device code"
+      )
+    }
+
+    if (!deviceCodeData.data?.generateDeviceCode) {
+      throw new Error("Invalid response from server")
+    }
+
+    const deviceCode = deviceCodeData.data.generateDeviceCode
+
+    spinner.stop()
+
+    // Step 2: Display code and open browser
+    console.log(`  Visit: ${chalk.cyan(deviceCode.verification_uri)}`)
+    console.log(`  `)
+    console.log(`  Enter code: ${chalk.yellow.bold(deviceCode.user_code)}`)
+    console.log("")
+
+    // Try to open browser automatically
+    try {
+      await open(deviceCode.verification_uri_complete)
+      console.log(chalk.dim("  ✓ Opened browser automatically"))
+    } catch (error) {
+      console.log(chalk.dim("  (Could not open browser automatically)"))
+    }
+
+    console.log("")
+
+    // Step 3: Poll for authorization
+    spinner.start("Waiting for authorization...")
+
+    const pollInterval = deviceCode.interval * 1000
+    const expiresAt = Date.now() + deviceCode.expires_in * 1000
+
+    while (Date.now() < expiresAt) {
+      await sleep(pollInterval)
+
+      const tokenRes = await fetch(`${API_ENDPOINT}/graphql`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          query: `
+            mutation PollDeviceToken($input: PollDeviceTokenInput!) {
+              pollDeviceToken(input: $input) {
+                __typename
+                ... on DeviceTokenSuccess {
+                  access_token
+                  token_type
+                  expires_in
+                  user {
+                    id
+                    email
+                    blazetag
+                  }
+                }
+                ... on DeviceTokenPending {
+                  error
+                  interval
+                }
+                ... on DeviceTokenError {
+                  error
+                  error_description
+                }
+              }
+            }
+          `,
+          variables: {
+            input: {
+              device_code: deviceCode.device_code,
+              clientId: "blaze-cli",
+            },
+          },
+        }),
+      })
+
+      interface TokenResponse {
+        __typename: string
+        access_token: string
+        token_type: string
+        expires_in: number
+        user: {
+          id: string
+          email?: string
+          blazetag?: string
+        }
+        error?: string
+        error_description?: string
+      }
+
+      const tokenData = (await tokenRes.json()) as {
+        data?: { pollDeviceToken?: TokenResponse }
+        errors?: Array<{ message: string }>
+      }
+      const tokenResponse = tokenData.data?.pollDeviceToken
+
+      if (!tokenResponse) {
+        throw new Error("Invalid response from server")
+      }
+
+      // Handle response
+      if (tokenResponse.__typename === "DeviceTokenSuccess") {
+        spinner.succeed(chalk.green("Authorization successful!"))
+
+        // Store token
+        await saveAuth({
+          access_token: tokenResponse.access_token,
+          token_type: tokenResponse.token_type,
+          expires_in: tokenResponse.expires_in,
+          user: tokenResponse.user,
+          created_at: Date.now(),
+        })
+
+        const user =
+          tokenResponse.user.email || tokenResponse.user.blazetag || "user"
+        console.log(chalk.green(`  Logged in as ${user}`))
+        return
+      }
+
+      if (tokenResponse.__typename === "DeviceTokenPending") {
+        // Continue polling
+        continue
+      }
+
+      if (tokenResponse.__typename === "DeviceTokenError") {
+        spinner.fail(chalk.red("Authorization failed"))
+        throw new Error(tokenResponse.error_description || tokenResponse.error)
+      }
+    }
+
+    // Timeout
+    spinner.fail(chalk.red("Authorization timed out"))
+    throw new Error("Device code expired. Please run the setup command again.")
+  } catch (error) {
+    spinner.fail(chalk.red("Authentication failed"))
+    throw error
+  }
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise(resolve => setTimeout(resolve, ms))
 }

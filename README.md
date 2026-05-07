@@ -42,7 +42,8 @@ Payments infrastructure for modern businesses. SDK, CLI, MCP server, and AI agen
 
 ```bash
 npm install -g @blaze-money/cli
-blaze auth login --api-key sk_test_...
+blaze auth
+# Opens browser for authentication
 blaze balance
 ```
 
@@ -103,8 +104,10 @@ A complete command-line interface for your Blaze account.
 
 | Command | Description |
 |---------|-------------|
-| `blaze auth login` | Authenticate with your API key |
+| `blaze auth` | Authenticate via browser (recommended) |
+| `blaze auth login --api-key <key>` | Authenticate with API key (legacy) |
 | `blaze auth whoami` | Show current authentication status |
+| `blaze auth logout` | Log out and clear credentials |
 | `blaze balance` | Check account balance |
 | `blaze customers list\|get\|create\|update\|archive` | Manage customers |
 | `blaze transfers list\|get\|create` | Manage transfers |

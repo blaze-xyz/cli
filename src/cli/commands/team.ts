@@ -13,7 +13,7 @@ export function registerTeamCommands(program: Command): void {
     .action(async () => {
       try {
         const globals = getGlobalOpts(program)
-        const client = getClient(globals)
+        const client = await getClient(globals)
         const result = await client.listTeamMembers()
         formatOutput(result.data, globals.format)
       } catch (err) {
@@ -27,7 +27,7 @@ export function registerTeamCommands(program: Command): void {
     .action(async () => {
       try {
         const globals = getGlobalOpts(program)
-        const client = getClient(globals)
+        const client = await getClient(globals)
         const result = await client.listPendingInvitations()
         formatOutput(result.data, globals.format)
       } catch (err) {
@@ -43,7 +43,7 @@ export function registerTeamCommands(program: Command): void {
     .action(async (opts: { email: string; role: string }) => {
       try {
         const globals = getGlobalOpts(program)
-        const client = getClient(globals)
+        const client = await getClient(globals)
         const result = await client.inviteTeamMember({
           email: opts.email,
           role: opts.role as TeamRole,
@@ -61,7 +61,7 @@ export function registerTeamCommands(program: Command): void {
     .action(async (id: string, opts: { role: string }) => {
       try {
         const globals = getGlobalOpts(program)
-        const client = getClient(globals)
+        const client = await getClient(globals)
         const result = await client.updateMemberRole(id, {
           role: opts.role as TeamRole,
         })
@@ -87,7 +87,7 @@ export function registerTeamCommands(program: Command): void {
           }
         }
         const globals = getGlobalOpts(program)
-        const client = getClient(globals)
+        const client = await getClient(globals)
         await client.removeMember(id)
         console.log(`Team member ${id} removed.`)
       } catch (err) {
@@ -112,7 +112,7 @@ export function registerTeamCommands(program: Command): void {
           }
         }
         const globals = getGlobalOpts(program)
-        const client = getClient(globals)
+        const client = await getClient(globals)
         await client.transferOwnership({
           new_owner_id: opts.newOwnerId,
         })

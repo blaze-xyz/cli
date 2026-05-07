@@ -14,7 +14,7 @@ export function registerTransfersCommands(program: Command): void {
     .action(async (opts: { limit?: number; status?: string }) => {
       try {
         const globals = getGlobalOpts(program)
-        const client = getClient(globals)
+        const client = await getClient(globals)
         const result = await client.listTransfers({
           limit: opts.limit,
           status: opts.status,
@@ -31,7 +31,7 @@ export function registerTransfersCommands(program: Command): void {
     .action(async (id: string) => {
       try {
         const globals = getGlobalOpts(program)
-        const client = getClient(globals)
+        const client = await getClient(globals)
         const transfer = await client.getTransfer(id)
         formatOutput(transfer, globals.format)
       } catch (err) {
@@ -59,7 +59,7 @@ export function registerTransfersCommands(program: Command): void {
       }) => {
         try {
           const globals = getGlobalOpts(program)
-          const client = getClient(globals)
+          const client = await getClient(globals)
           const transfer = await client.createTransfer({
             amount: opts.amount,
             currency: opts.currency as Currency | undefined,

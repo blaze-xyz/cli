@@ -16,7 +16,7 @@ export function registerWebhooksCommands(program: Command): void {
     .action(async (opts: { limit?: number }) => {
       try {
         const globals = getGlobalOpts(program)
-        const client = getClient(globals)
+        const client = await getClient(globals)
         const result = await client.listWebhooks({ limit: opts.limit })
         formatOutput(result.data, globals.format)
       } catch (err) {
@@ -30,7 +30,7 @@ export function registerWebhooksCommands(program: Command): void {
     .action(async (id: string) => {
       try {
         const globals = getGlobalOpts(program)
-        const client = getClient(globals)
+        const client = await getClient(globals)
         const result = await client.getWebhook(id)
         formatOutput(result, globals.format)
       } catch (err) {
@@ -48,7 +48,7 @@ export function registerWebhooksCommands(program: Command): void {
       async (opts: { url: string; events?: string; description?: string }) => {
         try {
           const globals = getGlobalOpts(program)
-          const client = getClient(globals)
+          const client = await getClient(globals)
           const result = await client.createWebhook({
             url: opts.url,
             events: opts.events
@@ -89,7 +89,7 @@ export function registerWebhooksCommands(program: Command): void {
       ) => {
         try {
           const globals = getGlobalOpts(program)
-          const client = getClient(globals)
+          const client = await getClient(globals)
           const data: {
             url?: string
             events?: WebhookEvent[]
@@ -128,7 +128,7 @@ export function registerWebhooksCommands(program: Command): void {
           }
         }
         const globals = getGlobalOpts(program)
-        const client = getClient(globals)
+        const client = await getClient(globals)
         await client.deleteWebhook(id)
         console.log(`Webhook ${id} deleted.`)
       } catch (err) {
