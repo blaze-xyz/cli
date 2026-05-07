@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { Command } from "commander"
+import { Command, CommanderError } from "commander"
 import { agentCommand } from "./commands/agent"
 import { registerAuthCommands } from "./commands/auth"
 import { registerBalanceCommand } from "./commands/balance"
@@ -35,6 +35,7 @@ program
   .option("--api-key <key>", "API key (overrides config)")
   .option("--base-url <url>", "API base URL")
   .option("--format <format>", "Output format: json or table", "table")
+  .exitOverride()
 
 registerAuthCommands(program)
 registerBalanceCommand(program)
@@ -62,4 +63,13 @@ registerContactsCommands(program)
 registerPaymentsCommands(program)
 registerMemoryCommands(program)
 
-program.parse()
+try {
+  program.parse()
+} catch (err) {
+  if (err instanceof CommanderError) {
+    process.exitCode = err.exitCode
+  } else {
+    console.error(err instanceof Error ? err.message : err)
+    process.exitCode = 1
+  }
+}
