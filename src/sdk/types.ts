@@ -533,3 +533,78 @@ export interface ListSubscriptionsParams extends PaginationParams {
   status?: string
   customer_id?: string
 }
+
+// Contacts (consumer recipients)
+export interface ContactBankAccount {
+  id: string
+  account_number: string
+  routing_number?: string
+  bank_name?: string
+  country?: string
+  currency_id?: string
+}
+
+export interface ContactCryptoAddress {
+  id: string
+  network: string
+  address: string
+}
+
+export interface Contact {
+  id: string
+  object: "recipient"
+  type: string
+  category: string
+  first_name: string | null
+  last_name: string | null
+  business_name: string | null
+  email: string | null
+  phone_number: string | null
+  is_favorite: boolean
+  bank_accounts: ContactBankAccount[]
+  crypto_addresses: ContactCryptoAddress[]
+  created_at: string
+}
+
+export interface ListContactsParams {
+  search?: string
+  limit?: number
+  type?: string
+  category?: string
+}
+
+export interface TransferResponse {
+  id: string
+  status: string
+  type: string
+  amount?: { value: number; currency_id: string }
+  created_at: string
+}
+
+// User Search (P2P network)
+export interface UserSearchResult {
+  id: string
+  blazetag: string | null
+  first_name: string | null
+  last_name: string | null
+  display_name: string | null
+  profile_picture: string | null
+  public_key: string | null
+}
+
+// P2P Payments
+export interface SendPaymentInput {
+  blazetag?: string
+  recipientPublicKey?: string
+  usdcAmountInCents: number
+  fiatAmountInCents?: number
+  currencyCode?: string
+  exchangeRate?: number
+  note?: string
+}
+
+export interface PaymentResult {
+  id: string
+  status: string
+  [key: string]: unknown
+}

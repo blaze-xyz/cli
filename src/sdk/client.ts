@@ -5,6 +5,7 @@ import {
   BlazeValidationError,
   BlazeRateLimitError,
 } from "./errors"
+import { randomUUID } from "node:crypto"
 import type {
   Balance,
   PaginatedList,
@@ -55,6 +56,12 @@ import type {
   ListSubscriptionsParams,
   FxRates,
   FxQuote,
+  Contact,
+  ListContactsParams,
+  TransferResponse,
+  UserSearchResult,
+  SendPaymentInput,
+  PaymentResult,
 } from "./types"
 
 export interface BlazeClientOptions {
@@ -549,31 +556,69 @@ export class BlazeClient {
   }
 
   // Contacts (consumer recipients)
-  async listContacts(params?: {
-    search?: string
-    limit?: number
-  }): Promise<unknown> {
-    return this.request<unknown>(
+  async listContacts(
+    params?: ListContactsParams
+  ): Promise<PaginatedList<Contact>> {
+    return this.request<PaginatedList<Contact>>(
       "GET",
       `/v1/recipients${this.buildQuery(params)}`
     )
   }
 
-  async createContact(data: unknown): Promise<unknown> {
-    return this.request<unknown>("POST", "/v1/recipients", data)
+  async getContact(id: string): Promise<Contact> {
+    return this.request<Contact>("GET", `/v1/recipients/${id}`)
   }
 
-  async deleteContact(id: string): Promise<unknown> {
-    return this.request<unknown>("DELETE", `/v1/recipients/${id}`)
+  async createContact(data: unknown): Promise<Contact> {
+    return this.request<Contact>("POST", "/v1/recipients", data)
   }
 
-  async payContact(id: string, data: unknown): Promise<unknown> {
-    return this.request<unknown>("POST", `/v1/recipients/${id}/transfers`, data)
+  async deleteContact(id: string): Promise<void> {
+    await this.request<void>("DELETE", `/v1/recipients/${id}`)
+  }
+
+  async payContact(
+    recipientId: string,
+    bankAccountId: string,
+    opts: { amount: number; currencyId: string; note?: string }
+  ): Promise<TransferResponse> {
+    const idempotencyKey = randomUUID()
+
+    return this.request<TransferResponse>(
+      "POST",
+      `/v1/recipients/${recipientId}/transfers`,
+      {
+        type: "BankTransfer",
+        bankAccountId,
+        fiatAmount: { value: opts.amount, currencyId: opts.currencyId },
+        idempotencyKey,
+      }
+    )
+  }
+
+  // User Search (P2P network)
+  async searchUsers(
+    query: string,
+    limit?: number
+  ): Promise<PaginatedList<UserSearchResult>> {
+    const params: Record<string, string> = { q: query }
+    if (limit) params.limit = String(limit)
+    return this.request<PaginatedList<UserSearchResult>>(
+      "GET",
+      `/v1/users/search${this.buildQuery(params)}`
+    )
+  }
+
+  async getUserByBlazetag(blazetag: string): Promise<UserSearchResult> {
+    return this.request<UserSearchResult>(
+      "GET",
+      `/v1/users/by-tag/${encodeURIComponent(blazetag)}`
+    )
   }
 
   // Payments (P2P)
-  async sendPayment(data: unknown): Promise<unknown> {
-    return this.request<unknown>("POST", "/v1/payments", data)
+  async sendPayment(data: SendPaymentInput): Promise<PaymentResult> {
+    return this.request<PaymentResult>("POST", "/v1/payments", data)
   }
 
   async listPayments(params?: { limit?: number }): Promise<unknown> {

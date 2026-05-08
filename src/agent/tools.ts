@@ -216,13 +216,19 @@ const toolDefs: ToolDef[] = [
   {
     schema: {
       name: "blaze_pay_contact",
-      description: "Send a payment to a saved contact by their contact ID.",
+      description:
+        "Send a payment to a saved contact. Resolves the first bank account if bank_account_id is not provided.",
       input_schema: props(["contact_id", "amount"], {
         contact_id: { type: "string", description: "Contact ID" },
+        bank_account_id: {
+          type: "string",
+          description:
+            "Bank account ID (resolves first bank account if omitted)",
+        },
         amount: { type: "number", description: "Amount to send" },
         currency: {
           type: "string",
-          description: "Currency code (default USDC)",
+          description: "Currency code (default USD)",
         },
         note: { type: "string", description: "Payment note" },
       }),
@@ -230,15 +236,42 @@ const toolDefs: ToolDef[] = [
     execute: async (input, client) => {
       const i = input as {
         contact_id: string
+        bank_account_id?: string
         amount: number
         currency?: string
         note?: string
       }
-      return client.payContact(i.contact_id, {
-        amount: i.amount,
-        currency: i.currency,
-        note: i.note,
-      })
+
+      try {
+        let bankAccountId = i.bank_account_id
+        if (!bankAccountId) {
+          const contact = await client.getContact(i.contact_id)
+          if (!contact.bank_accounts.length) {
+            return {
+              success: false,
+              error: "Contact has no bank accounts on file.",
+            }
+          }
+          bankAccountId = contact.bank_accounts[0].id
+        }
+
+        const result = await client.payContact(i.contact_id, bankAccountId, {
+          amount: i.amount,
+          currencyId: i.currency ?? "USD",
+          note: i.note,
+        })
+        return {
+          success: true,
+          transferId: result.id,
+          status: result.status,
+        }
+      } catch (err: any) {
+        return {
+          success: false,
+          error: err?.message || String(err),
+          code: err?.statusCode || err?.status,
+        }
+      }
     },
   },
   {
@@ -256,6 +289,31 @@ const toolDefs: ToolDef[] = [
   },
 
   // -------------------------------------------------------------------------
+  // Consumer — P2P user search
+  // -------------------------------------------------------------------------
+  {
+    schema: {
+      name: "blaze_search_users",
+      description:
+        "Search for Blaze users by name or blazetag (P2P network). Returns matching users with their blazetags and public keys.",
+      input_schema: props(["query"], {
+        query: {
+          type: "string",
+          description: "Search query (name or blazetag)",
+        },
+        limit: {
+          type: "number",
+          description: "Maximum number of results (default 10)",
+        },
+      }),
+    },
+    execute: async (input, client) => {
+      const i = input as { query: string; limit?: number }
+      return client.searchUsers(i.query, i.limit)
+    },
+  },
+
+  // -------------------------------------------------------------------------
   // Consumer — P2P payments
   // -------------------------------------------------------------------------
   {
@@ -267,10 +325,10 @@ const toolDefs: ToolDef[] = [
           type: "string",
           description: "Recipient's blazetag, e.g. @john",
         },
-        amount: { type: "number", description: "Amount to send" },
+        amount: { type: "number", description: "Amount to send in dollars" },
         currency: {
           type: "string",
-          description: "Currency code (default USDC)",
+          description: "Currency code (default USD)",
         },
         note: { type: "string", description: "Payment note or memo" },
       }),
@@ -282,10 +340,32 @@ const toolDefs: ToolDef[] = [
         currency?: string
         note?: string
       }
+      const currency = (i.currency ?? "USD").toUpperCase()
+      const needsFx = currency !== "USD" && currency !== "USDC"
+
+      let usdcAmountInCents: number
+      let fiatAmountInCents: number | undefined
+      let exchangeRate: number | undefined
+
+      if (needsFx) {
+        const quote = await client.createFxQuote({
+          from_currency: currency,
+          to_currency: "USD",
+          amount: i.amount,
+        })
+        usdcAmountInCents = Math.round(quote.converted_amount * 100)
+        fiatAmountInCents = Math.round(i.amount * 100)
+        exchangeRate = quote.exchange_rate
+      } else {
+        usdcAmountInCents = Math.round(i.amount * 100)
+      }
+
       return client.sendPayment({
         blazetag: i.blazetag,
-        amount: i.amount,
-        currency: i.currency ?? "USDC",
+        usdcAmountInCents,
+        fiatAmountInCents,
+        currencyCode: currency,
+        exchangeRate,
         note: i.note,
       })
     },
