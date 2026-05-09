@@ -46,8 +46,8 @@
     "LICENSE"
   ],
   "scripts": {
-    "build": "NODE_OPTIONS='--max-old-space-size=8192' tsup src/cli/index.ts src/index.ts src/mcp/server.ts src/agent/orchestrator.ts --format cjs --dts",
-    "dev": "tsup src/cli/index.ts src/index.ts src/mcp/server.ts src/agent/orchestrator.ts --format cjs --watch",
+    "build": "NODE_OPTIONS='--max-old-space-size=8192' tsup",
+    "dev": "tsup --watch",
     "typecheck": "tsc --noEmit",
     "test": "jest --config jest.config.ts",
     "test:e2e": "jest --config jest.e2e.config.ts",

@@ -4,6 +4,20 @@ import { getClient, getGlobalOpts, handleError } from "../utils"
 import { formatOutput } from "../output"
 import type { Contact, ContactBankAccount } from "../../sdk/types"
 
+function truncate(str: string, max: number): string {
+  return str.length > max ? str.slice(0, max - 1) + "…" : str
+}
+
+function formatDate(iso: string | undefined): string {
+  if (!iso) return "–"
+  const d = new Date(iso)
+  return d.toLocaleDateString("en-US", {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+  })
+}
+
 async function resolveBankAccount(
   contact: Contact
 ): Promise<ContactBankAccount> {
@@ -43,7 +57,28 @@ export function registerContactsCommands(program: Command): void {
         const globals = getGlobalOpts(program)
         const client = await getClient(globals)
         const result = await client.listContacts({ search: opts.search })
-        formatOutput(result.data, globals.format)
+        const formatted = (result.data as Contact[]).map(c => {
+          const name =
+            c.business_name ||
+            [c.first_name, c.last_name].filter(Boolean).join(" ") ||
+            "–"
+          return {
+            name: truncate(name, 24),
+            type: c.type,
+            account:
+              c.bank_accounts
+                ?.map(ba => {
+                  const bank = truncate(ba.bank_name || "Bank", 12)
+                  const last4 = (ba.account_number || "").slice(-4)
+                  return last4 ? `${bank} (****${last4})` : bank
+                })
+                .join(", ") || "–",
+            email: truncate(c.email || "–", 22),
+            favorite: c.is_favorite ? "★" : "",
+            added: formatDate(c.created_at),
+          }
+        })
+        formatOutput(formatted, globals.format)
       } catch (err) {
         handleError(err)
       }

@@ -583,6 +583,7 @@ export class BlazeClient {
     opts: { amount: number; currencyId: string; note?: string }
   ): Promise<TransferResponse> {
     const idempotencyKey = randomUUID()
+    const valueInCents = Math.round(opts.amount * 100)
 
     return this.request<TransferResponse>(
       "POST",
@@ -590,7 +591,7 @@ export class BlazeClient {
       {
         type: "BankTransfer",
         bankAccountId,
-        fiatAmount: { value: opts.amount, currencyId: opts.currencyId },
+        fiatAmount: { value: valueInCents, currencyId: opts.currencyId },
         idempotencyKey,
       }
     )
