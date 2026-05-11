@@ -87,9 +87,12 @@ export function registerContactsCommands(program: Command): void {
   contacts
     .command("add")
     .description("Add a new contact")
-    .requiredOption("--name <name>", "Contact name")
-    .option("--blazetag <tag>", "Blaze tag")
+    .requiredOption("--first-name <name>", "First name")
+    .requiredOption("--last-name <name>", "Last name")
+    .requiredOption("--phone <number>", "Phone number (E.164 format)")
     .option("--type <type>", "Account type: bank, clabe, crypto", "bank")
+    .option("--category <cat>", "Category: Personal, Business", "Personal")
+    .option("--email <email>", "Email address")
     .option("--routing-number <n>", "US routing number")
     .option("--account-number <n>", "US account number")
     .option("--clabe <n>", "CLABE (Mexico)")
@@ -97,9 +100,12 @@ export function registerContactsCommands(program: Command): void {
     .option("--network <network>", "Blockchain network: stellar, ethereum")
     .action(
       async (opts: {
-        name: string
-        blazetag?: string
+        firstName: string
+        lastName: string
+        phone: string
         type: string
+        category: string
+        email?: string
         routingNumber?: string
         accountNumber?: string
         clabe?: string
@@ -109,16 +115,45 @@ export function registerContactsCommands(program: Command): void {
         try {
           const globals = getGlobalOpts(program)
           const client = await getClient(globals)
+
           const data: Record<string, unknown> = {
-            name: opts.name,
-            type: opts.type,
+            type:
+              opts.type === "clabe" || opts.type === "bank"
+                ? "Bank"
+                : "Stablecoin",
+            category: opts.category,
+            firstName: opts.firstName,
+            lastName: opts.lastName,
+            phoneNumber: opts.phone,
           }
-          if (opts.blazetag) data.blazetag = opts.blazetag
-          if (opts.routingNumber) data.routing_number = opts.routingNumber
-          if (opts.accountNumber) data.account_number = opts.accountNumber
-          if (opts.clabe) data.clabe = opts.clabe
-          if (opts.walletAddress) data.wallet_address = opts.walletAddress
-          if (opts.network) data.network = opts.network
+
+          if (opts.email) data.email = opts.email
+
+          if (opts.type === "clabe" && opts.clabe) {
+            data.bankAccountData = {
+              countryId: "MX",
+              accountNumber: opts.clabe,
+            }
+          } else if (opts.type === "bank") {
+            if (!opts.accountNumber) {
+              console.error(
+                "Error: --account-number is required for US bank accounts"
+              )
+              process.exit(1)
+            }
+            data.bankAccountData = {
+              countryId: "US",
+              accountNumber: opts.accountNumber,
+              routingNumber: opts.routingNumber,
+            }
+          }
+
+          if (opts.type === "crypto" && opts.walletAddress) {
+            data.cryptoAddressData = {
+              address: opts.walletAddress,
+              network: opts.network || "stellar",
+            }
+          }
 
           const result = await client.createContact(data)
           formatOutput(result, globals.format)
@@ -203,17 +238,14 @@ export function registerContactsCommands(program: Command): void {
           ).toUpperCase()
 
           let conversionNote = ""
+          let usdcAmountInCents: number
           if (currency !== "USD" && currency !== "USDC") {
-            try {
-              const quote = await client.createFxQuote({
-                from_currency: currency,
-                to_currency: "USD",
-                amount: opts.amount,
-              })
-              conversionNote = ` (~$${quote.converted_amount.toFixed(2)} USD from your balance)`
-            } catch {
-              // FX quote is informational — don't block payment if it fails
-            }
+            const approxUsdRate = estimateUsdRate(currency)
+            const estimatedUsd = opts.amount / approxUsdRate
+            usdcAmountInCents = Math.round(estimatedUsd * 100)
+            conversionNote = ` (~$${estimatedUsd.toFixed(2)} USD from your balance)`
+          } else {
+            usdcAmountInCents = Math.round(opts.amount * 100)
           }
 
           if (!opts.yes) {
@@ -234,6 +266,7 @@ export function registerContactsCommands(program: Command): void {
             const result = await client.payContact(contact.id, bankAccount.id, {
               amount: opts.amount,
               currencyId: currency,
+              usdcAmountInCents,
               note: opts.note,
             })
             console.log(`Payment submitted. Transfer ID: ${result.id}`)
@@ -281,4 +314,17 @@ export function registerContactsCommands(program: Command): void {
         handleError(err)
       }
     })
+}
+
+const USD_RATES: Record<string, number> = {
+  MXN: 17.15,
+  BRL: 5.05,
+  EUR: 0.92,
+  GBP: 0.79,
+  COP: 4200,
+  ARS: 900,
+}
+
+function estimateUsdRate(currency: string): number {
+  return USD_RATES[currency.toUpperCase()] || 1
 }

@@ -66,12 +66,14 @@ function formatListCell(key: string, value: unknown): string {
 function formatObjectAsTable(obj: Record<string, unknown>): void {
   const table = new Table({
     style: { head: ["cyan"] },
+    colWidths: [20, 60],
+    wordWrap: true,
   })
 
   for (const [key, value] of Object.entries(obj)) {
     if (typeof value === "object" && value !== null && !Array.isArray(value)) {
-      // Check if it's a currency amount object
-      const formattedValue = formatCurrencyAmount(
+      const formattedValue = formatNestedObject(
+        key,
         value as Record<string, unknown>
       )
       table.push({ [key]: formattedValue })
@@ -83,6 +85,45 @@ function formatObjectAsTable(obj: Record<string, unknown>): void {
   }
 
   console.log(table.toString())
+}
+
+function formatNestedObject(key: string, obj: Record<string, unknown>): string {
+  const currencyFormatted = formatCurrencyAmount(obj)
+  if (currencyFormatted !== JSON.stringify(obj)) {
+    return currencyFormatted
+  }
+
+  if (key === "recipient" || key === "sender") {
+    const name =
+      [obj.firstName || obj.first_name, obj.lastName || obj.last_name]
+        .filter(Boolean)
+        .join(" ") ||
+      (obj.businessName as string) ||
+      (obj.business_name as string) ||
+      ""
+    const banks = obj.bankAccounts || obj.bank_accounts
+    if (Array.isArray(banks) && banks.length > 0) {
+      const bank = banks[0] as Record<string, unknown>
+      const bankName = bank.bankName || bank.bank_name || "Bank"
+      const acct = String(bank.accountNumber || bank.account_number || "")
+      return `${name} — ${bankName} (****${acct.slice(-4)})`
+    }
+    return name || String(obj.id || "")
+  }
+
+  if (key === "fiatAmount" || key === "usdcAmount") {
+    const val = obj.value as number
+    const curr = obj.currency as Record<string, unknown> | undefined
+    const code = curr?.code || obj.currencyId || obj.currency_id || "USD"
+    return `${code} ${(val / 100).toFixed(2)}`
+  }
+
+  const summary = Object.entries(obj)
+    .filter(([, v]) => typeof v !== "object" || v === null)
+    .map(([k, v]) => `${k}: ${formatCell(v)}`)
+    .slice(0, 4)
+    .join(", ")
+  return summary || JSON.stringify(obj)
 }
 
 function formatCell(value: unknown): string {

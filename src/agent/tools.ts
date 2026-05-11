@@ -255,9 +255,12 @@ const toolDefs: ToolDef[] = [
           bankAccountId = contact.bank_accounts[0].id
         }
 
+        const currencyId = i.currency ?? "USD"
+        const usdcAmountInCents = Math.round(i.amount * 100)
         const result = await client.payContact(i.contact_id, bankAccountId, {
           amount: i.amount,
-          currencyId: i.currency ?? "USD",
+          currencyId,
+          usdcAmountInCents,
           note: i.note,
         })
         return {
