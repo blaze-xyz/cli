@@ -256,6 +256,21 @@ const toolDefs: ToolDef[] = [
         }
 
         const currencyId = i.currency ?? "USD"
+        const MINIMUMS: Record<string, number> = {
+          USD: 1,
+          MXN: 50,
+          BRL: 10,
+          EUR: 5,
+          GBP: 5,
+        }
+        const minimum = MINIMUMS[currencyId.toUpperCase()] || 5
+        if (i.amount < minimum) {
+          return {
+            success: false,
+            error: `Minimum transfer amount for ${currencyId} is ${minimum} ${currencyId}. You requested ${i.amount} ${currencyId}.`,
+          }
+        }
+
         const usdcAmountInCents = Math.round(i.amount * 100)
         const result = await client.payContact(i.contact_id, bankAccountId, {
           amount: i.amount,

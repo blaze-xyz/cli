@@ -256,6 +256,14 @@ export function registerContactsCommands(program: Command): void {
             usdcAmountInCents = Math.round(opts.amount * 100)
           }
 
+          const minimumAmount = getMinimumTransferAmount(currency)
+          if (opts.amount < minimumAmount) {
+            console.error(
+              `Minimum transfer amount for ${currency} is ${minimumAmount} ${currency}. You requested ${opts.amount} ${currency}.`
+            )
+            process.exit(1)
+          }
+
           if (!opts.yes) {
             const displayName = contact.first_name
               ? `${contact.first_name} ${contact.last_name || ""}`.trim()
@@ -333,6 +341,18 @@ const USD_RATES: Record<string, number> = {
   ARS: 900,
 }
 
+const BRIDGE_TRANSFER_MINIMUMS_LOCAL: Record<string, number> = {
+  USD: 1,
+  MXN: 50,
+  BRL: 10,
+  EUR: 5,
+  GBP: 5,
+}
+
 function estimateUsdRate(currency: string): number {
   return USD_RATES[currency.toUpperCase()] || 1
+}
+
+function getMinimumTransferAmount(currency: string): number {
+  return BRIDGE_TRANSFER_MINIMUMS_LOCAL[currency.toUpperCase()] || 5
 }
