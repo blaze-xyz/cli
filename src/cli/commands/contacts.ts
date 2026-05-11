@@ -149,9 +149,17 @@ export function registerContactsCommands(program: Command): void {
           }
 
           if (opts.type === "crypto" && opts.walletAddress) {
+            const networkMap: Record<string, string> = {
+              stellar: "Stellar",
+              ethereum: "Ethereum",
+              solana: "Solana",
+              polygon: "Polygon",
+            }
             data.cryptoAddressData = {
               address: opts.walletAddress,
-              network: opts.network || "stellar",
+              network:
+                networkMap[(opts.network || "stellar").toLowerCase()] ||
+                "Stellar",
             }
           }
 
