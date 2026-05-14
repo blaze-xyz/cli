@@ -283,11 +283,16 @@ const toolDefs: ToolDef[] = [
           transferId: result.id,
           status: result.status,
         }
-      } catch (err: any) {
+      } catch (err: unknown) {
+        const error = err as {
+          message?: string
+          statusCode?: number
+          status?: number
+        }
         return {
           success: false,
-          error: err?.message || String(err),
-          code: err?.statusCode || err?.status,
+          error: error?.message || String(err),
+          code: error?.statusCode || error?.status,
         }
       }
     },

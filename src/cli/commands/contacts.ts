@@ -288,16 +288,21 @@ export function registerContactsCommands(program: Command): void {
             console.log(`Payment submitted. Transfer ID: ${result.id}`)
             console.log(`Status: ${result.status}`)
             formatOutput(result, globals.format)
-          } catch (err: any) {
-            const code = err?.statusCode || err?.status
+          } catch (err: unknown) {
+            const error = err as {
+              message?: string
+              statusCode?: number
+              status?: number
+            }
+            const code = error?.statusCode || error?.status
             if (code === 402) {
               console.error("Insufficient balance. Check with: blaze balance")
             } else if (code === 422) {
-              console.error(`Payment rejected: ${err.message}`)
+              console.error(`Payment rejected: ${error.message}`)
             } else if (code === 429) {
               console.error("Rate limited. Please wait a moment and try again.")
             } else {
-              console.error(`Payment failed: ${err?.message || err}`)
+              console.error(`Payment failed: ${error?.message || err}`)
             }
             process.exit(1)
           }

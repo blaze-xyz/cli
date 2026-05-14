@@ -1,6 +1,7 @@
 import { Command } from "commander"
 import { BlazeClient } from "../../sdk/client"
 import { resolveApiKey, resolveBaseUrl } from "../../sdk/config"
+import { getAuthToken } from "../auth-utils"
 import { runAgent } from "../../agent"
 
 export const agentCommand = new Command("agent")
@@ -14,15 +15,21 @@ export const agentCommand = new Command("agent")
   .action(
     async (command: string, opts: { apiKey?: string; baseUrl?: string }) => {
       const apiKey = resolveApiKey(opts.apiKey)
-      if (!apiKey) {
+      const bearerToken = !apiKey ? await getAuthToken() : null
+
+      if (!apiKey && !bearerToken) {
         console.error(
-          "No API key found. Set BLAZE_API_KEY or run: blaze config set-key <key>"
+          "Not authenticated. Run `blaze auth` or set BLAZE_API_KEY."
         )
         process.exit(1)
       }
 
       const baseUrl = resolveBaseUrl(opts.baseUrl)
-      const client = new BlazeClient({ apiKey, baseUrl })
+      const client = new BlazeClient({
+        apiKey: apiKey ?? undefined,
+        bearerToken: bearerToken ?? undefined,
+        baseUrl,
+      })
 
       await runAgent(command, client)
     }
