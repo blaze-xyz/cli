@@ -65,7 +65,17 @@ export function registerWithdrawalsCommands(program: Command): void {
             currency: opts.currency as Currency | undefined,
             note: opts.note,
           })
-          formatOutput(withdrawal, globals.format)
+
+          if (globals.format === "json") {
+            formatOutput(withdrawal, "json")
+          } else {
+            const w = withdrawal as unknown as Record<string, unknown>
+            console.log("")
+            console.log(`  Withdrawal created!`)
+            console.log(`  ID:      ${w.id}`)
+            console.log(`  Status:  ${w.status}`)
+            console.log("")
+          }
         } catch (err) {
           handleError(err)
         }

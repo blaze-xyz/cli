@@ -3,6 +3,7 @@ import * as path from "node:path"
 import * as os from "node:os"
 import {
   resolveApiKey,
+  resolveConfigApiKey,
   resolveBaseUrl,
   detectEnvironment,
   loadConfig,
@@ -36,18 +37,39 @@ describe("resolveApiKey", () => {
     expect(result).toBe("sk_test_from_env")
   })
 
-  it("returns config file api_key when no flag or env var", () => {
+  it("returns null when no flag or env var (does not check config file)", () => {
     mockedFs.existsSync.mockReturnValue(true)
     mockedFs.readFileSync.mockReturnValue(
       JSON.stringify({ api_key: "sk_test_from_config" })
     )
     const result = resolveApiKey()
-    expect(result).toBe("sk_test_from_config")
+    expect(result).toBeNull()
   })
 
   it("returns null when nothing is available", () => {
     mockedFs.existsSync.mockReturnValue(false)
     const result = resolveApiKey()
+    expect(result).toBeNull()
+  })
+})
+
+describe("resolveConfigApiKey", () => {
+  beforeEach(() => {
+    jest.resetAllMocks()
+  })
+
+  it("returns api_key from config file", () => {
+    mockedFs.existsSync.mockReturnValue(true)
+    mockedFs.readFileSync.mockReturnValue(
+      JSON.stringify({ api_key: "sk_test_from_config" })
+    )
+    const result = resolveConfigApiKey()
+    expect(result).toBe("sk_test_from_config")
+  })
+
+  it("returns null when config file does not exist", () => {
+    mockedFs.existsSync.mockReturnValue(false)
+    const result = resolveConfigApiKey()
     expect(result).toBeNull()
   })
 })

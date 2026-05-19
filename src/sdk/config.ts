@@ -30,9 +30,14 @@ export function saveConfig(config: BlazeConfig): void {
 }
 
 export function resolveApiKey(flagValue?: string): string | null {
-  // Precedence: flag > env var > config file
+  // Only explicit sources: flag or env var
+  // Config-file API key is NOT returned here — caller decides priority vs bearer token
   if (flagValue) return flagValue
   if (process.env.BLAZE_API_KEY) return process.env.BLAZE_API_KEY
+  return null
+}
+
+export function resolveConfigApiKey(): string | null {
   const config = loadConfig()
   return config?.api_key ?? null
 }

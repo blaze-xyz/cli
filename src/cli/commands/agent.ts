@@ -1,8 +1,14 @@
 import { Command } from "commander"
 import { BlazeClient } from "../../sdk/client"
-import { resolveApiKey, resolveBaseUrl } from "../../sdk/config"
+import {
+  resolveApiKey,
+  resolveConfigApiKey,
+  resolveBaseUrl,
+} from "../../sdk/config"
 import { getAuthToken } from "../auth-utils"
 import { runAgent } from "../../agent"
+
+const SPARK_API_URL = process.env.BLAZE_API_URL ?? "https://api.blaze.money"
 
 export const agentCommand = new Command("agent")
   .description("Run a natural language payment command")
@@ -14,23 +20,40 @@ export const agentCommand = new Command("agent")
   .option("-u, --base-url <url>", "Base URL (overrides env/config)")
   .action(
     async (command: string, opts: { apiKey?: string; baseUrl?: string }) => {
-      const apiKey = resolveApiKey(opts.apiKey)
-      const bearerToken = !apiKey ? await getAuthToken() : null
-
-      if (!apiKey && !bearerToken) {
-        console.error(
-          "Not authenticated. Run `blaze auth` or set BLAZE_API_KEY."
-        )
-        process.exit(1)
+      // Explicit API key (flag or env var) always wins
+      const explicitApiKey = resolveApiKey(opts.apiKey)
+      if (explicitApiKey) {
+        const client = new BlazeClient({
+          apiKey: explicitApiKey,
+          baseUrl: resolveBaseUrl(opts.baseUrl),
+        })
+        await runAgent(command, client)
+        return
       }
 
-      const baseUrl = resolveBaseUrl(opts.baseUrl)
-      const client = new BlazeClient({
-        apiKey: apiKey ?? undefined,
-        bearerToken: bearerToken ?? undefined,
-        baseUrl,
-      })
+      // Active bearer token takes priority over config-file API key
+      const bearerToken = await getAuthToken()
+      if (bearerToken) {
+        const client = new BlazeClient({
+          bearerToken,
+          baseUrl: opts.baseUrl ?? SPARK_API_URL,
+        })
+        await runAgent(command, client)
+        return
+      }
 
-      await runAgent(command, client)
+      // Fall back to config-file API key
+      const configApiKey = resolveConfigApiKey()
+      if (configApiKey) {
+        const client = new BlazeClient({
+          apiKey: configApiKey,
+          baseUrl: resolveBaseUrl(opts.baseUrl),
+        })
+        await runAgent(command, client)
+        return
+      }
+
+      console.error("Not authenticated. Run `blaze auth` or set BLAZE_API_KEY.")
+      process.exit(1)
     }
   )

@@ -164,7 +164,15 @@ export function registerContactsCommands(program: Command): void {
           }
 
           const result = await client.createContact(data)
-          formatOutput(result, globals.format)
+          if (globals.format === "json") {
+            formatOutput(result, "json")
+          } else {
+            console.log("")
+            console.log(`  Contact added!`)
+            console.log(`  Name:  ${opts.firstName} ${opts.lastName}`)
+            console.log(`  ID:    ${result.id}`)
+            console.log("")
+          }
         } catch (err) {
           handleError(err)
         }
@@ -264,13 +272,14 @@ export function registerContactsCommands(program: Command): void {
             process.exit(1)
           }
 
+          const displayName = contact.first_name
+            ? `${contact.first_name} ${contact.last_name || ""}`.trim()
+            : contact.business_name || contact.id
+          const accountLabel = `${bankAccount.bank_name || "Bank"} (****${(bankAccount.account_number || "").slice(-4)})`
+
           if (!opts.yes) {
-            const displayName = contact.first_name
-              ? `${contact.first_name} ${contact.last_name || ""}`.trim()
-              : contact.business_name || contact.id
-            const accountInfo = `${bankAccount.bank_name || "Bank"} — ${currency} (****${(bankAccount.account_number || "").slice(-4)})`
             const confirmed = await confirm({
-              message: `Pay ${opts.amount} ${currency}${conversionNote} to ${displayName} — ${accountInfo}?`,
+              message: `Pay ${opts.amount} ${currency}${conversionNote} to ${displayName} — ${accountLabel}?`,
             })
             if (!confirmed) {
               console.log("Cancelled.")
@@ -285,9 +294,22 @@ export function registerContactsCommands(program: Command): void {
               usdcAmountInCents,
               note: opts.note,
             })
-            console.log(`Payment submitted. Transfer ID: ${result.id}`)
-            console.log(`Status: ${result.status}`)
-            formatOutput(result, globals.format)
+            if (globals.format === "json") {
+              formatOutput(result, "json")
+            } else {
+              console.log("")
+              console.log(`  Payment submitted!`)
+              console.log(`  ${"─".repeat(40)}`)
+              console.log(`  To:           ${displayName}`)
+              console.log(`  Account:      ${accountLabel}`)
+              console.log(`  Amount:       ${opts.amount} ${currency}`)
+              if (conversionNote) {
+                console.log(`  Debited:      ${conversionNote.trim()}`)
+              }
+              console.log(`  Status:       ${result.status}`)
+              console.log(`  Transfer ID:  ${result.id}`)
+              console.log("")
+            }
           } catch (err: unknown) {
             const error = err as {
               message?: string

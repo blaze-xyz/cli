@@ -120,10 +120,15 @@ export function registerSendCommand(program: Command): void {
             note: opts.note,
           })
 
-          console.log(
-            `Payment sent! ID: ${result.id}, Status: ${result.status}`
-          )
-          formatOutput(result, globals.format)
+          if (globals.format === "json") {
+            formatOutput(result, "json")
+          } else {
+            console.log("")
+            console.log(`  Payment sent!`)
+            console.log(`  ID:      ${result.id}`)
+            console.log(`  Status:  ${result.status}`)
+            console.log("")
+          }
         } catch (err) {
           handleError(err)
         }

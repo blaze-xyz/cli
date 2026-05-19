@@ -61,7 +61,17 @@ export function registerCustomersCommands(program: Command): void {
             last_name: opts.lastName,
             phone: opts.phone,
           })
-          formatOutput(customer, globals.format)
+
+          if (globals.format === "json") {
+            formatOutput(customer, "json")
+          } else {
+            const c = customer as unknown as Record<string, unknown>
+            console.log("")
+            console.log(`  Customer created!`)
+            console.log(`  ID:    ${c.id}`)
+            console.log(`  Email: ${opts.email}`)
+            console.log("")
+          }
         } catch (err) {
           handleError(err)
         }

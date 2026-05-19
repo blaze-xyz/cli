@@ -62,7 +62,21 @@ export function registerPaylinksCommands(program: Command): void {
             name: opts.name,
             note: opts.note,
           })
-          formatOutput(link, globals.format)
+
+          if (globals.format === "json") {
+            formatOutput(link, "json")
+          } else {
+            const l = link as unknown as Record<string, unknown>
+            console.log("")
+            console.log(`  Payment link created!`)
+            console.log(`  ID:     ${l.id}`)
+            if (l.url) console.log(`  URL:    ${l.url}`)
+            console.log(
+              `  Amount: $${(opts.amount / 100).toFixed(2)} ${opts.currency || "USD"}`
+            )
+            if (l.status) console.log(`  Status: ${l.status}`)
+            console.log("")
+          }
         } catch (err) {
           handleError(err)
         }

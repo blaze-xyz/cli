@@ -1,6 +1,7 @@
 import { BlazeClient } from "../sdk/client"
 import {
   resolveApiKey,
+  resolveConfigApiKey,
   resolveBaseUrl,
   loadConfig,
   saveConfig,
@@ -16,10 +17,11 @@ export async function getClient(opts: {
   const config = loadConfig()
   const activeBusinessId = config?.activeBusinessId
 
-  const apiKey = resolveApiKey(opts.apiKey)
-  if (apiKey) {
+  // Explicit API key (flag or env var) always wins
+  const explicitApiKey = resolveApiKey(opts.apiKey)
+  if (explicitApiKey) {
     return new BlazeClient({
-      apiKey,
+      apiKey: explicitApiKey,
       baseUrl: resolveBaseUrl(opts.baseUrl),
       defaultHeaders: activeBusinessId
         ? { "x-business-id": activeBusinessId }
@@ -27,23 +29,35 @@ export async function getClient(opts: {
     })
   }
 
-  // Fall back to the JWT stored by `blaze auth`
+  // Active bearer token (from `blaze auth`) takes priority over config-file API key
   const token = await getAuthToken()
-  if (!token) {
-    console.error(
-      "Not authenticated. Run `blaze auth` to log in or provide an API key with --api-key."
-    )
-    process.exit(1)
+  if (token) {
+    const baseUrl = opts.baseUrl ?? SPARK_API_URL
+    return new BlazeClient({
+      bearerToken: token,
+      baseUrl,
+      defaultHeaders: activeBusinessId
+        ? { "x-business-id": activeBusinessId }
+        : undefined,
+    })
   }
-  // JWT-authenticated requests go to the Spark consumer API
-  const baseUrl = opts.baseUrl ?? SPARK_API_URL
-  return new BlazeClient({
-    bearerToken: token,
-    baseUrl,
-    defaultHeaders: activeBusinessId
-      ? { "x-business-id": activeBusinessId }
-      : undefined,
-  })
+
+  // Fall back to config-file API key (from `blaze auth login --api-key`)
+  const configApiKey = resolveConfigApiKey()
+  if (configApiKey) {
+    return new BlazeClient({
+      apiKey: configApiKey,
+      baseUrl: resolveBaseUrl(opts.baseUrl),
+      defaultHeaders: activeBusinessId
+        ? { "x-business-id": activeBusinessId }
+        : undefined,
+    })
+  }
+
+  console.error(
+    "Not authenticated. Run `blaze auth` to log in or provide an API key with --api-key."
+  )
+  process.exit(1)
 }
 
 export function getGlobalOpts(program: {
@@ -53,7 +67,7 @@ export function getGlobalOpts(program: {
   return {
     apiKey: opts.apiKey as string | undefined,
     baseUrl: opts.baseUrl as string | undefined,
-    format: (opts.format as "json" | "table") ?? "json",
+    format: (opts.format as "json" | "table") ?? "table",
   }
 }
 

@@ -12,7 +12,25 @@ export function registerMeCommands(program: Command): void {
         const globals = getGlobalOpts(program)
         const client = await getClient(globals)
         const profile = await client.getMe()
-        formatOutput(profile, globals.format)
+
+        if (globals.format === "json") {
+          formatOutput(profile, "json")
+          return
+        }
+
+        const p = profile as Record<string, unknown>
+        const name = [p.firstName || p.first_name, p.lastName || p.last_name]
+          .filter(Boolean)
+          .join(" ")
+
+        console.log("")
+        if (name) console.log(`  Name:      ${name}`)
+        if (p.blazetag) console.log(`  Blazetag:  @${p.blazetag}`)
+        if (p.email) console.log(`  Email:     ${p.email}`)
+        if (p.phoneNumber || p.phone_number)
+          console.log(`  Phone:     ${p.phoneNumber || p.phone_number}`)
+        if (p.id) console.log(`  ID:        ${p.id}`)
+        console.log("")
       } catch (err) {
         handleError(err)
       }
@@ -24,8 +42,7 @@ export function registerMeCommands(program: Command): void {
       try {
         const globals = getGlobalOpts(program)
         const client = await getClient(globals)
-        const result = await client.setBlazetag(tag)
-        formatOutput(result, globals.format)
+        await client.setBlazetag(tag)
         console.log(`Blaze tag set to @${tag}.`)
       } catch (err) {
         handleError(err)
