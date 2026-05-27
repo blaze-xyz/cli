@@ -1,6 +1,20 @@
 import { Command } from "commander"
 import { getClient, getGlobalOpts, handleError } from "../utils"
 import { formatOutput } from "../output"
+import { CurrencyAmount } from "../../sdk/types"
+import { getAuth } from "../auth-utils"
+import { loadConfig } from "../../sdk/config"
+
+function extractAmount(value: CurrencyAmount | number): number {
+  return typeof value === "object" && value !== null ? value.amount : value
+}
+
+function extractCurrency(
+  value: CurrencyAmount | number,
+  fallback: string
+): string {
+  return typeof value === "object" && value !== null ? value.currency : fallback
+}
 
 export function registerBalanceCommand(program: Command): void {
   program
@@ -17,21 +31,66 @@ export function registerBalanceCommand(program: Command): void {
           return
         }
 
-        const available = (balance.available / 100).toLocaleString("en-US", {
+        const availableCents = extractAmount(balance.available)
+        const pendingCents = extractAmount(balance.pending)
+        const currency = extractCurrency(
+          balance.available,
+          balance.currency || "USD"
+        )
+
+        const availableFmt = (availableCents / 100).toLocaleString("en-US", {
           minimumFractionDigits: 2,
           maximumFractionDigits: 2,
         })
-        const pending = (balance.pending / 100).toLocaleString("en-US", {
+        const pendingFmt = (pendingCents / 100).toLocaleString("en-US", {
           minimumFractionDigits: 2,
           maximumFractionDigits: 2,
         })
-        const currency = balance.currency || "USD"
+
+        // Determine context label
+        const config = loadConfig()
+        const isPersonal =
+          globals.personal || (!globals.business && !config?.activeBusinessId)
+        let accountLabel: string
+        let hint: string
+
+        if (isPersonal) {
+          const auth = await getAuth()
+          const name = auth?.user?.blazetag || auth?.user?.email || "Personal"
+          accountLabel = `${name} (Personal)`
+          hint =
+            "Showing personal balance. Use --business to see a business balance."
+        } else {
+          // Try to resolve business name
+          const businessId = globals.business || config?.activeBusinessId
+          let businessName = businessId || "Business"
+          try {
+            const result = await client.get<{
+              object: string
+              data: Array<{ id: string; name: string; role: string }>
+            }>("/v1/me/businesses")
+            const match = result.data.find(
+              (b: { id: string; name: string; role: string }) =>
+                b.id === businessId
+            )
+            if (match) businessName = match.name
+          } catch {
+            // Use ID as fallback
+          }
+          accountLabel = businessName
+          hint =
+            "Showing business balance. Use --personal for your personal balance."
+        }
 
         console.log("")
-        console.log(`  Available:  $${available} ${currency}`)
-        if (balance.pending > 0) {
-          console.log(`  Pending:    $${pending} ${currency}`)
+        console.log(`  ${accountLabel}`)
+        console.log("")
+        console.log(`  Available:  $${availableFmt} ${currency}`)
+        if (pendingCents > 0) {
+          console.log(`  Pending:    $${pendingFmt} ${currency}`)
         }
+        console.log("")
+        console.log(`  ⌁ ${hint}`)
         console.log("")
       } catch (err) {
         handleError(err)

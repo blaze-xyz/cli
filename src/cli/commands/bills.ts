@@ -2,7 +2,12 @@ import { confirm } from "@inquirer/prompts"
 import { Command } from "commander"
 
 import { formatOutput } from "../output"
-import { getClient, getGlobalOpts, handleError } from "../utils"
+import {
+  getClient,
+  getGlobalOpts,
+  handleError,
+  requireBusinessContext,
+} from "../utils"
 
 // ============================================
 // GraphQL operations (inline — bills surface is GraphQL-only).
@@ -243,6 +248,7 @@ export function registerBillsCommands(program: Command): void {
       }) => {
         try {
           const globals = getGlobalOpts(program)
+          await requireBusinessContext(globals)
           const client = await getClient(globals)
           const result = await client.graphqlRequest<{
             businessBills: { nodes: unknown[]; pageInfo: unknown }
@@ -269,6 +275,7 @@ export function registerBillsCommands(program: Command): void {
     .action(async (id: string) => {
       try {
         const globals = getGlobalOpts(program)
+        await requireBusinessContext(globals)
         const client = await getClient(globals)
         const result = await client.graphqlRequest<{ businessBill: unknown }>(
           GET_BILL_QUERY,
@@ -289,6 +296,7 @@ export function registerBillsCommands(program: Command): void {
     .action(async (id: string) => {
       try {
         const globals = getGlobalOpts(program)
+        await requireBusinessContext(globals)
         const client = await getClient(globals)
         const result = await client.graphqlRequest<{
           approveBusinessBill: unknown
@@ -306,6 +314,7 @@ export function registerBillsCommands(program: Command): void {
     .action(async (id: string, opts: { reason?: string }) => {
       try {
         const globals = getGlobalOpts(program)
+        await requireBusinessContext(globals)
         const client = await getClient(globals)
         const result = await client.graphqlRequest<{
           rejectBusinessBill: unknown
@@ -340,6 +349,7 @@ export function registerBillsCommands(program: Command): void {
       ) => {
         try {
           const globals = getGlobalOpts(program)
+          await requireBusinessContext(globals)
           const client = await getClient(globals)
 
           // 1. Get quote
@@ -426,6 +436,7 @@ export function registerBillsCommands(program: Command): void {
     .action(async () => {
       try {
         const globals = getGlobalOpts(program)
+        await requireBusinessContext(globals)
         const client = await getClient(globals)
         const result = await client.graphqlRequest<{
           businessBillPendingApprovals: unknown[]
@@ -441,6 +452,7 @@ export function registerBillsCommands(program: Command): void {
     .action(async (approvalId: string) => {
       try {
         const globals = getGlobalOpts(program)
+        await requireBusinessContext(globals)
         const client = await getClient(globals)
         const result = await client.graphqlRequest<{
           approveBusinessBillApprovalRequest: unknown
@@ -457,6 +469,7 @@ export function registerBillsCommands(program: Command): void {
     .action(async (approvalId: string, opts: { reason?: string }) => {
       try {
         const globals = getGlobalOpts(program)
+        await requireBusinessContext(globals)
         const client = await getClient(globals)
         const result = await client.graphqlRequest<{
           rejectBusinessBillApprovalRequest: unknown
@@ -480,6 +493,7 @@ export function registerBillsCommands(program: Command): void {
       async (opts: { bill?: string; category?: string; limit?: number }) => {
         try {
           const globals = getGlobalOpts(program)
+          await requireBusinessContext(globals)
           const client = await getClient(globals)
           const result = await client.graphqlRequest<{
             businessActivityLog: unknown[]
@@ -506,6 +520,7 @@ export function registerBillsCommands(program: Command): void {
     .action(async (opts: { limit?: number }) => {
       try {
         const globals = getGlobalOpts(program)
+        await requireBusinessContext(globals)
         const client = await getClient(globals)
         const result = await client.graphqlRequest<{
           businessVendors: unknown[]
@@ -526,6 +541,7 @@ export function registerBillsCommands(program: Command): void {
     .action(async (opts: { browser: boolean }) => {
       try {
         const globals = getGlobalOpts(program)
+        await requireBusinessContext(globals)
         const client = await getClient(globals)
 
         // 1. Generate auth session
@@ -603,6 +619,7 @@ export function registerBillsCommands(program: Command): void {
     .action(async () => {
       try {
         const globals = getGlobalOpts(program)
+        await requireBusinessContext(globals)
         const client = await getClient(globals)
         const result = await client.graphqlRequest<{
           businessGmailIntegrations: unknown[]
@@ -620,6 +637,7 @@ export function registerBillsCommands(program: Command): void {
     .action(async (id: string, opts: { yes?: boolean }) => {
       try {
         const globals = getGlobalOpts(program)
+        await requireBusinessContext(globals)
         const client = await getClient(globals)
 
         if (!opts.yes) {
@@ -652,6 +670,7 @@ export function registerBillsCommands(program: Command): void {
     .action(async (opts: { integration?: string }) => {
       try {
         const globals = getGlobalOpts(program)
+        await requireBusinessContext(globals)
         const client = await getClient(globals)
         await client.graphqlRequest<{ triggerBusinessGmailSync: boolean }>(
           TRIGGER_SYNC_MUTATION,

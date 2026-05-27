@@ -508,6 +508,85 @@ const toolDefs: ToolDef[] = [
   },
 
   // -------------------------------------------------------------------------
+  // Insights (Plaid-derived bank spend, read-only)
+  // -------------------------------------------------------------------------
+  {
+    schema: {
+      name: "blaze_get_spending_summary",
+      description:
+        "Read a summary of the business's bank spending (by category, top merchants) over an optional date range. Read-only insight; amounts are in integer cents.",
+      input_schema: props([], {
+        start_date: {
+          type: "string",
+          description: "Start of the date range (ISO 8601, e.g. 2025-01-01)",
+        },
+        end_date: {
+          type: "string",
+          description: "End of the date range (ISO 8601, e.g. 2025-01-31)",
+        },
+      }),
+    },
+    execute: async (input, client) => {
+      const i = input as { start_date?: string; end_date?: string }
+      return client.getInsightsSummary({
+        start_date: i.start_date,
+        end_date: i.end_date,
+      })
+    },
+  },
+  {
+    schema: {
+      name: "blaze_list_bank_transactions",
+      description:
+        "List the business's bank transactions (from connected Plaid accounts) with optional date range, account filter, and pagination. Read-only insight; amounts are in integer cents.",
+      input_schema: props([], {
+        start_date: {
+          type: "string",
+          description: "Start of the date range (ISO 8601, e.g. 2025-01-01)",
+        },
+        end_date: {
+          type: "string",
+          description: "End of the date range (ISO 8601, e.g. 2025-01-31)",
+        },
+        plaid_account_data_id: {
+          type: "string",
+          description: "Filter to a single connected Plaid account",
+        },
+        limit: {
+          type: "number",
+          description: "Maximum number of results (1-100)",
+        },
+        cursor: { type: "string", description: "Pagination cursor" },
+      }),
+    },
+    execute: async (input, client) => {
+      const i = input as {
+        start_date?: string
+        end_date?: string
+        plaid_account_data_id?: string
+        limit?: number
+        cursor?: string
+      }
+      return client.listBankTransactions({
+        start_date: i.start_date,
+        end_date: i.end_date,
+        plaid_account_data_id: i.plaid_account_data_id,
+        limit: i.limit,
+        cursor: i.cursor,
+      })
+    },
+  },
+  {
+    schema: {
+      name: "blaze_get_bank_balances",
+      description:
+        "Read live available/current balances of the business's connected bank accounts (how much cash the business has). Read-only insight; balances are in major units (e.g. dollars).",
+      input_schema: { type: "object", properties: {}, required: [] },
+    },
+    execute: async (_input, client) => client.getBankBalances(),
+  },
+
+  // -------------------------------------------------------------------------
   // Business — balance
   // -------------------------------------------------------------------------
   {

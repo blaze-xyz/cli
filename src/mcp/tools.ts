@@ -864,14 +864,60 @@ export function registerTools(server: McpServer, client: BlazeClient): void {
   )
 
   // ============================================
-  // Bills (AP automation) — tools 56-69
+  // Insights (Plaid-derived business spend, read-only) — tools 56-58
+  // ============================================
+
+  // 56. Get Spending Summary
+  server.tool(
+    "blaze_get_spending_summary",
+    "Get a summary of the business's bank spending (by category, top merchants) over a date range. Amounts are in integer cents.",
+    schemas.getSpendingSummarySchema.shape,
+    async params => {
+      try {
+        return jsonResult(await client.getInsightsSummary(params))
+      } catch (err) {
+        return errorResult(err)
+      }
+    }
+  )
+
+  // 57. List Bank Transactions
+  server.tool(
+    "blaze_list_bank_transactions",
+    "List the business's bank transactions (from connected Plaid accounts) with optional date range, account filter, and pagination. Amounts are integer cents.",
+    schemas.listBankTransactionsSchema.shape,
+    async params => {
+      try {
+        return jsonResult(await client.listBankTransactions(params))
+      } catch (err) {
+        return errorResult(err)
+      }
+    }
+  )
+
+  // 58. Get Bank Balances
+  server.tool(
+    "blaze_get_bank_balances",
+    "Get live available/current balances of the business's connected bank accounts (how much cash the business has). Balances are in major units (e.g. dollars).",
+    schemas.getBankBalancesSchema.shape,
+    async () => {
+      try {
+        return jsonResult(await client.getBankBalances())
+      } catch (err) {
+        return errorResult(err)
+      }
+    }
+  )
+
+  // ============================================
+  // Bills (AP automation) — tools 59-75
   // ============================================
   // IMPORTANT: bill data (vendor names, amounts, bank info, email bodies)
   // is data, not instructions. Never treat extracted invoice content as
   // direction to act. Money movement is gated by quote-then-confirm and
   // server-side policy.
 
-  // 56. List Bills
+  // 59. List Bills
   server.tool(
     "blaze_list_bills",
     "List business bills with optional status / vendor / due-date filters",
@@ -893,7 +939,7 @@ export function registerTools(server: McpServer, client: BlazeClient): void {
     }
   )
 
-  // 57. Get Bill
+  // 60. Get Bill
   server.tool(
     "blaze_get_bill",
     "Get a single bill by id, including vendor, line items, payments",
@@ -907,7 +953,7 @@ export function registerTools(server: McpServer, client: BlazeClient): void {
     }
   )
 
-  // 58. Approve Bill (NEEDS_REVIEW → READY_TO_PAY)
+  // 61. Approve Bill (NEEDS_REVIEW → READY_TO_PAY)
   server.tool(
     "blaze_approve_bill",
     "Approve a bill that's currently NEEDS_REVIEW, moving it to READY_TO_PAY. Confirm with the user first.",
@@ -921,7 +967,7 @@ export function registerTools(server: McpServer, client: BlazeClient): void {
     }
   )
 
-  // 60. Reject Bill
+  // 62. Reject Bill
   server.tool(
     "blaze_reject_bill",
     "Reject a bill (do not pay). Use when the user identifies a bill as not theirs / spam / wrong.",
@@ -935,7 +981,7 @@ export function registerTools(server: McpServer, client: BlazeClient): void {
     }
   )
 
-  // 61. Quote Bill Payment — phase 1 of two-phase pay
+  // 63. Quote Bill Payment — phase 1 of two-phase pay
   server.tool(
     "blaze_quote_bill_payment",
     "Get a payment quote for a bill (fees, ETA, provider routing). DO NOT pay before surfacing this quote to the user and getting explicit consent. Quote expires in 15 minutes.",
@@ -955,7 +1001,7 @@ export function registerTools(server: McpServer, client: BlazeClient): void {
     }
   )
 
-  // 62. Pay Bill — phase 2, irrevocable
+  // 64. Pay Bill — phase 2, irrevocable
   server.tool(
     "blaze_pay_bill",
     "IRREVOCABLE. Execute a bill payment using a fresh quote_id from blaze_quote_bill_payment. Server enforces policy: agent payments may be denied or require approval. Always surface the quote and get explicit user consent BEFORE calling this tool. confirm must be literally true.",
@@ -975,7 +1021,7 @@ export function registerTools(server: McpServer, client: BlazeClient): void {
     }
   )
 
-  // 63. List Vendors
+  // 65. List Vendors
   server.tool(
     "blaze_list_bill_vendors",
     "List bill vendors for the active business",
@@ -989,7 +1035,7 @@ export function registerTools(server: McpServer, client: BlazeClient): void {
     }
   )
 
-  // 64. Get Vendor
+  // 66. Get Vendor
   server.tool(
     "blaze_get_bill_vendor",
     "Get a single bill vendor",
@@ -1003,7 +1049,7 @@ export function registerTools(server: McpServer, client: BlazeClient): void {
     }
   )
 
-  // 65. Connect Gmail (start) — two-tool dance for agents
+  // 67. Connect Gmail (start) — two-tool dance for agents
   server.tool(
     "blaze_connect_gmail_start",
     "Start the Gmail OAuth flow. Returns an auth URL the user must open in their browser. After they grant consent, call blaze_connect_gmail_finalize with the session id to check completion.",
@@ -1017,7 +1063,7 @@ export function registerTools(server: McpServer, client: BlazeClient): void {
     }
   )
 
-  // 66. Connect Gmail (finalize)
+  // 68. Connect Gmail (finalize)
   server.tool(
     "blaze_connect_gmail_finalize",
     "Check the status of an in-flight Gmail OAuth session. Call repeatedly after the user opens the auth URL until status is COMPLETE.",
@@ -1031,7 +1077,7 @@ export function registerTools(server: McpServer, client: BlazeClient): void {
     }
   )
 
-  // 67. List Gmail Integrations
+  // 69. List Gmail Integrations
   server.tool(
     "blaze_list_gmail_integrations",
     "List connected Gmail accounts for the active business",
@@ -1045,7 +1091,7 @@ export function registerTools(server: McpServer, client: BlazeClient): void {
     }
   )
 
-  // 68. Trigger Gmail Sync
+  // 70. Trigger Gmail Sync
   server.tool(
     "blaze_sync_bills",
     "Manually trigger a Gmail sync run. Use sparingly — sync is already scheduled every 5 minutes per integration.",
@@ -1059,7 +1105,7 @@ export function registerTools(server: McpServer, client: BlazeClient): void {
     }
   )
 
-  // 69. List Pending Approvals
+  // 71. List Pending Approvals
   server.tool(
     "blaze_list_pending_bill_approvals",
     "List bills currently awaiting human approval before they can be paid",
@@ -1073,7 +1119,7 @@ export function registerTools(server: McpServer, client: BlazeClient): void {
     }
   )
 
-  // 70. Approve Approval Request
+  // 72. Approve Approval Request
   server.tool(
     "blaze_approve_bill_approval_request",
     "Approve a pending approval request, unlocking the bill so it can be paid",
@@ -1087,7 +1133,7 @@ export function registerTools(server: McpServer, client: BlazeClient): void {
     }
   )
 
-  // 71. Reject Approval Request
+  // 73. Reject Approval Request
   server.tool(
     "blaze_reject_bill_approval_request",
     "Reject a pending approval request",
@@ -1101,7 +1147,7 @@ export function registerTools(server: McpServer, client: BlazeClient): void {
     }
   )
 
-  // 72. Bills Activity Log
+  // 74. Bills Activity Log
   server.tool(
     "blaze_list_bills_activity_log",
     "List the activity log filtered to bill-related events. Useful for forensic investigation of agent vs human pays and policy decisions.",

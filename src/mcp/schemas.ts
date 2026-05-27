@@ -480,6 +480,45 @@ export const resumeSubscriptionSchema = z.object({
 })
 
 // ============================================
+// Insights (Plaid-derived business spend, read-only)
+// ============================================
+
+export const getSpendingSummarySchema = z.object({
+  start_date: z
+    .string()
+    .optional()
+    .describe("Start of the date range (ISO 8601, e.g. 2025-01-01)"),
+  end_date: z
+    .string()
+    .optional()
+    .describe("End of the date range (ISO 8601, e.g. 2025-01-31)"),
+})
+
+export const listBankTransactionsSchema = z.object({
+  start_date: z
+    .string()
+    .optional()
+    .describe("Start of the date range (ISO 8601, e.g. 2025-01-01)"),
+  end_date: z
+    .string()
+    .optional()
+    .describe("End of the date range (ISO 8601, e.g. 2025-01-31)"),
+  plaid_account_data_id: z
+    .string()
+    .optional()
+    .describe("Filter to a single connected Plaid account"),
+  limit: z
+    .number()
+    .min(1)
+    .max(100)
+    .optional()
+    .describe("Max results to return (1-100)"),
+  cursor: z.string().optional().describe("Pagination cursor"),
+})
+
+export const getBankBalancesSchema = z.object({})
+
+// ============================================
 // Bills (AP automation)
 // ============================================
 

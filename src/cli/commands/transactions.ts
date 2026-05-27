@@ -1,6 +1,84 @@
 import { Command } from "commander"
+import Table from "cli-table3"
+import stringWidth from "string-width"
 import { getClient, getGlobalOpts, handleError } from "../utils"
 import { formatOutput } from "../output"
+import { getAuth } from "../auth-utils"
+import { loadConfig } from "../../sdk/config"
+
+function safeDesc(str: string): string {
+  if (stringWidth(str) === actualTerminalWidth(str)) return str.substring(0, 30)
+  return str
+    .replace(
+      /\p{Emoji_Presentation}[\u{FE0F}\u{200D}\p{Emoji_Modifier}\p{Emoji_Component}\u{2640}\u{2642}]*/gu,
+      "·"
+    )
+    .substring(0, 30)
+}
+
+function actualTerminalWidth(str: string): number {
+  let w = 0
+  for (const ch of str) {
+    const cp = ch.codePointAt(0) || 0
+    if (
+      cp >= 0x1100 &&
+      (cp <= 0x115f ||
+        cp === 0x2329 ||
+        cp === 0x232a ||
+        (cp >= 0x2e80 && cp <= 0x3247) ||
+        (cp >= 0x3250 && cp <= 0x4dbf) ||
+        (cp >= 0x4e00 && cp <= 0xa4c6) ||
+        (cp >= 0xa960 && cp <= 0xa97c) ||
+        (cp >= 0xac00 && cp <= 0xd7a3) ||
+        (cp >= 0xf900 && cp <= 0xfaff) ||
+        (cp >= 0xfe10 && cp <= 0xfe19) ||
+        (cp >= 0xfe30 && cp <= 0xfe6b) ||
+        (cp >= 0xff01 && cp <= 0xff60) ||
+        (cp >= 0xffe0 && cp <= 0xffe6) ||
+        (cp >= 0x1f000 && cp <= 0x1ffff) ||
+        (cp >= 0x20000 && cp <= 0x2fffd) ||
+        (cp >= 0x30000 && cp <= 0x3fffd))
+    ) {
+      w += 2
+    } else if (cp >= 0x20) {
+      w += 1
+    }
+  }
+  return w
+}
+
+function formatTxTable(data: Array<Record<string, unknown>>): void {
+  const rows: string[][] = []
+  for (const tx of data) {
+    const date = tx.created_at
+      ? new Date(tx.created_at as string).toLocaleDateString("en-US", {
+          month: "short",
+          day: "numeric",
+        })
+      : "—"
+    const amount = tx.amount != null ? Number(tx.amount) / 100 : 0
+    const currency = (tx.currency as string) || "USD"
+    const sign = (tx.type as string) === "received" ? "+" : "-"
+    const amtStr = `${sign}$${Math.abs(amount).toFixed(2)} ${currency}`
+    const status = (tx.status as string) || "—"
+    const note =
+      (tx.note as string) ||
+      (tx.description as string) ||
+      (tx.type as string) ||
+      "—"
+    const desc = safeDesc(note)
+    rows.push([date, amtStr, status, desc])
+  }
+
+  const table = new Table({
+    head: ["Date", "Amount", "Status", "Description"],
+    style: { head: [], border: [] },
+  })
+  for (const row of rows) {
+    table.push(row)
+  }
+  console.log(table.toString())
+}
 
 export function registerTransactionsCommands(program: Command): void {
   const transactions = program
@@ -18,12 +96,85 @@ export function registerTransactionsCommands(program: Command): void {
         try {
           const globals = getGlobalOpts(program)
           const client = await getClient(globals)
+
+          // Determine context
+          const config = loadConfig()
+          const isPersonal =
+            globals.personal || (!globals.business && !config?.activeBusinessId)
+
+          // Personal mode uses /v1/payments (consumer transactions)
+          if (isPersonal) {
+            const personalResult = await client.get<{
+              object: string
+              data: Array<Record<string, unknown>>
+              has_more: boolean
+            }>("/v1/payments" + (opts.limit ? `?limit=${opts.limit}` : ""))
+
+            if (globals.format === "json") {
+              formatOutput(personalResult.data, "json")
+              return
+            }
+
+            const auth = await getAuth()
+            const name = auth?.user?.blazetag || auth?.user?.email || "Personal"
+            console.log("")
+            console.log(`  ${name} (Personal) — Recent Transactions`)
+            console.log("")
+            if (personalResult.data.length === 0) {
+              console.log("  No transactions yet.")
+            } else {
+              formatTxTable(personalResult.data)
+            }
+            console.log("")
+            console.log(
+              "  ⌁ Showing personal transactions. Use --business for business activity."
+            )
+            console.log("")
+            return
+          }
+
           const result = await client.listTransactions({
             limit: opts.limit,
             type: opts.type,
             status: opts.status,
           })
-          formatOutput(result.data, globals.format)
+
+          if (globals.format === "json") {
+            formatOutput(result.data, "json")
+            return
+          }
+          const businessId = globals.business || config?.activeBusinessId
+          let businessName = businessId || "Business"
+          try {
+            const bResult = await client.get<{
+              object: string
+              data: Array<{ id: string; name: string; role: string }>
+            }>("/v1/me/businesses")
+            const match = bResult.data.find(
+              (b: { id: string; name: string; role: string }) =>
+                b.id === businessId
+            )
+            if (match) businessName = match.name
+          } catch {
+            // Use ID as fallback
+          }
+          const accountLabel = `${businessName} — Recent Transactions`
+          const hint =
+            "Showing business transactions. Use --personal for personal activity."
+
+          console.log("")
+          console.log(`  ${accountLabel}`)
+          console.log("")
+          if (result.data.length === 0) {
+            console.log("  No transactions yet.")
+          } else {
+            formatTxTable(
+              result.data as unknown as Array<Record<string, unknown>>
+            )
+          }
+          console.log("")
+          console.log(`  ⌁ ${hint}`)
+          console.log("")
         } catch (err) {
           handleError(err)
         }

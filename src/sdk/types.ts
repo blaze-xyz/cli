@@ -17,17 +17,28 @@ export interface PaginatedList<T> {
   next_cursor: string | null
 }
 
+// Pagination list that also reports a total count (e.g. insights transactions)
+export interface PaginatedListWithCount<T> extends PaginatedList<T> {
+  total_count: number
+}
+
 export interface PaginationParams {
   limit?: number
   cursor?: string
 }
 
 // Balance
-export interface Balance {
-  object: "balance"
-  available: number
-  pending: number
+export interface CurrencyAmount {
+  amount: number
   currency: string
+}
+
+export interface Balance {
+  object?: "balance"
+  available: CurrencyAmount | number
+  pending: CurrencyAmount | number
+  reserved?: CurrencyAmount | number
+  currency?: string
 }
 
 // Customer
@@ -607,4 +618,63 @@ export interface PaymentResult {
   id: string
   status: string
   [key: string]: unknown
+}
+
+// Insights (Plaid-derived business spend, read-only)
+export interface InsightsDateRangeParams {
+  start_date?: string
+  end_date?: string
+}
+
+export interface SpendingSummary {
+  object: "spending_summary"
+  total_spending_cents: number
+  currency: string
+  by_category: unknown[]
+  top_merchants: unknown[]
+  weekend_pattern: unknown
+  period_start: string
+  period_end: string
+}
+
+export interface BankTransaction {
+  id: string
+  object: "bank_transaction"
+  amount: number
+  is_outflow: boolean
+  currency: string
+  merchant_name: string | null
+  merchant_logo_url: string | null
+  category: string | null
+  category_detailed: string | null
+  city: string | null
+  region: string | null
+  date: string
+  is_pending: boolean
+  institution_name: string | null
+  account_mask: string | null
+}
+
+export interface ListBankTransactionsParams extends InsightsDateRangeParams {
+  plaid_account_data_id?: string
+  limit?: number
+  cursor?: string
+}
+
+export interface BankBalanceAccount {
+  plaid_account_data_id: string
+  institution_name: string | null
+  account_name: string | null
+  mask: string | null
+  available: number | null
+  current: number | null
+  currency: string | null
+}
+
+export interface BankBalances {
+  object: "bank_balances"
+  accounts: BankBalanceAccount[]
+  total_available: number | null
+  currency: string | null
+  accounts_unavailable: number
 }

@@ -155,3 +155,49 @@ describe("team schemas", () => {
     expect(result.success).toBe(false)
   })
 })
+
+describe("insights schemas", () => {
+  it("getSpendingSummarySchema accepts empty params (all optional)", () => {
+    const result = schemas.getSpendingSummarySchema.safeParse({})
+    expect(result.success).toBe(true)
+  })
+
+  it("getSpendingSummarySchema accepts start_date and end_date", () => {
+    const result = schemas.getSpendingSummarySchema.safeParse({
+      start_date: "2025-01-01",
+      end_date: "2025-01-31",
+    })
+    expect(result.success).toBe(true)
+  })
+
+  it("listBankTransactionsSchema accepts empty params (all optional)", () => {
+    const result = schemas.listBankTransactionsSchema.safeParse({})
+    expect(result.success).toBe(true)
+  })
+
+  it("listBankTransactionsSchema accepts full input with date range, account, and pagination", () => {
+    const result = schemas.listBankTransactionsSchema.safeParse({
+      start_date: "2025-01-01",
+      end_date: "2025-01-31",
+      plaid_account_data_id: "pad_123",
+      limit: 50,
+      cursor: "cursor_abc",
+    })
+    expect(result.success).toBe(true)
+  })
+
+  it("listBankTransactionsSchema rejects limit below 1", () => {
+    const result = schemas.listBankTransactionsSchema.safeParse({ limit: 0 })
+    expect(result.success).toBe(false)
+  })
+
+  it("listBankTransactionsSchema rejects limit over 100", () => {
+    const result = schemas.listBankTransactionsSchema.safeParse({ limit: 200 })
+    expect(result.success).toBe(false)
+  })
+
+  it("getBankBalancesSchema accepts empty object (no parameters)", () => {
+    const result = schemas.getBankBalancesSchema.safeParse({})
+    expect(result.success).toBe(true)
+  })
+})

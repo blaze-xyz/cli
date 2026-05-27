@@ -62,6 +62,12 @@ import type {
   UserSearchResult,
   SendPaymentInput,
   PaymentResult,
+  PaginatedListWithCount,
+  SpendingSummary,
+  BankTransaction,
+  ListBankTransactionsParams,
+  BankBalances,
+  InsightsDateRangeParams,
 } from "./types"
 
 export interface BlazeClientOptions {
@@ -747,6 +753,29 @@ export class BlazeClient {
 
   async resumeSubscription(id: string): Promise<Subscription> {
     return this.request<Subscription>("POST", `/v1/subscriptions/${id}/resume`)
+  }
+
+  // Insights (Plaid-derived business spend, read-only)
+  async getInsightsSummary(
+    params?: InsightsDateRangeParams
+  ): Promise<SpendingSummary> {
+    return this.request<SpendingSummary>(
+      "GET",
+      `/v1/insights/summary${this.buildQuery(params)}`
+    )
+  }
+
+  async listBankTransactions(
+    params?: ListBankTransactionsParams
+  ): Promise<PaginatedListWithCount<BankTransaction>> {
+    return this.request<PaginatedListWithCount<BankTransaction>>(
+      "GET",
+      `/v1/insights/transactions${this.buildQuery(params)}`
+    )
+  }
+
+  async getBankBalances(): Promise<BankBalances> {
+    return this.request<BankBalances>("GET", "/v1/insights/balances")
   }
 
   // FX Rates & Quotes

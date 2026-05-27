@@ -86,6 +86,15 @@ describeE2E("E2E: Agent Tools", () => {
       expect(toolNames).toContain("blaze_fx_quote")
       expect(toolNames).toContain("blaze_fx_rates")
     })
+
+    it("includes insights tools", () => {
+      const tools = buildTools(ctx.client, memory)
+      const toolNames = tools.map(t => t.name)
+
+      expect(toolNames).toContain("blaze_get_spending_summary")
+      expect(toolNames).toContain("blaze_list_bank_transactions")
+      expect(toolNames).toContain("blaze_get_bank_balances")
+    })
   })
 
   describe("Memory Tools Execution", () => {
@@ -336,6 +345,51 @@ describeE2E("E2E: Agent Tools", () => {
         if (tx.type) expect(tx.type).toBe("payment")
         if (tx.status) expect(tx.status).toBe("completed")
       })
+    })
+  })
+
+  describe("Insights Tools Execution", () => {
+    it("executes blaze_get_spending_summary", async () => {
+      const result = (await executeTool(
+        "blaze_get_spending_summary",
+        {},
+        ctx.client,
+        memory
+      )) as { object: string; total_spending_cents: number; currency: string }
+
+      expect(result).toHaveProperty("object", "spending_summary")
+      expect(result).toHaveProperty("total_spending_cents")
+      expect(result).toHaveProperty("currency")
+    })
+
+    it("executes blaze_list_bank_transactions", async () => {
+      const result = (await executeTool(
+        "blaze_list_bank_transactions",
+        { limit: 5 },
+        ctx.client,
+        memory
+      )) as { object: string; data: Array<{ id: string }>; total_count: number }
+
+      expect(result).toHaveProperty("object", "list")
+      expect(Array.isArray(result.data)).toBe(true)
+      expect(result).toHaveProperty("total_count")
+    })
+
+    it("executes blaze_get_bank_balances", async () => {
+      const result = (await executeTool(
+        "blaze_get_bank_balances",
+        {},
+        ctx.client,
+        memory
+      )) as {
+        object: string
+        accounts: unknown[]
+        accounts_unavailable: number
+      }
+
+      expect(result).toHaveProperty("object", "bank_balances")
+      expect(Array.isArray(result.accounts)).toBe(true)
+      expect(result).toHaveProperty("accounts_unavailable")
     })
   })
 

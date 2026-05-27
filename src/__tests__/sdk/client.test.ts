@@ -356,4 +356,76 @@ describe("BlazeClient", () => {
       )
     })
   })
+
+  describe("insights methods", () => {
+    it("getInsightsSummary calls GET /v1/insights/summary with no query when no params", async () => {
+      const fetchMock = mockFetch(200, { data: { object: "spending_summary" } })
+      await client.getInsightsSummary()
+      expect(fetchMock).toHaveBeenCalledWith(
+        "https://api.blaze.money/v1/insights/summary",
+        expect.objectContaining({ method: "GET" })
+      )
+    })
+
+    it("getInsightsSummary appends start_date and end_date query when params passed", async () => {
+      const fetchMock = mockFetch(200, { data: { object: "spending_summary" } })
+      await client.getInsightsSummary({
+        start_date: "2025-01-01",
+        end_date: "2025-01-31",
+      })
+      expect(fetchMock).toHaveBeenCalledWith(
+        "https://api.blaze.money/v1/insights/summary?start_date=2025-01-01&end_date=2025-01-31",
+        expect.objectContaining({ method: "GET" })
+      )
+    })
+
+    it("listBankTransactions calls GET /v1/insights/transactions and returns the list wrapper", async () => {
+      const listResponse = {
+        object: "list",
+        data: [{ id: "btx_1", object: "bank_transaction" }],
+        has_more: false,
+        next_cursor: null,
+        total_count: 1,
+      }
+      const fetchMock = mockFetch(200, listResponse)
+      const result = await client.listBankTransactions()
+      expect(fetchMock).toHaveBeenCalledWith(
+        "https://api.blaze.money/v1/insights/transactions",
+        expect.objectContaining({ method: "GET" })
+      )
+      expect(result).toEqual(listResponse)
+      expect(result.object).toBe("list")
+      expect(Array.isArray(result.data)).toBe(true)
+      expect(result.has_more).toBe(false)
+    })
+
+    it("listBankTransactions appends date, account, and limit query when params passed", async () => {
+      const fetchMock = mockFetch(200, {
+        object: "list",
+        data: [],
+        has_more: false,
+        next_cursor: null,
+        total_count: 0,
+      })
+      await client.listBankTransactions({
+        start_date: "2025-02-01",
+        end_date: "2025-02-28",
+        plaid_account_data_id: "pad_123",
+        limit: 25,
+      })
+      expect(fetchMock).toHaveBeenCalledWith(
+        "https://api.blaze.money/v1/insights/transactions?start_date=2025-02-01&end_date=2025-02-28&plaid_account_data_id=pad_123&limit=25",
+        expect.objectContaining({ method: "GET" })
+      )
+    })
+
+    it("getBankBalances calls GET /v1/insights/balances", async () => {
+      const fetchMock = mockFetch(200, { data: { object: "bank_balances" } })
+      await client.getBankBalances()
+      expect(fetchMock).toHaveBeenCalledWith(
+        "https://api.blaze.money/v1/insights/balances",
+        expect.objectContaining({ method: "GET" })
+      )
+    })
+  })
 })

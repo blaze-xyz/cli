@@ -15,6 +15,7 @@ import { registerApiKeysCommands } from "./commands/api-keys"
 import { registerTeamCommands } from "./commands/team"
 import { registerWebhooksCommands } from "./commands/webhooks"
 import { registerAnalyticsCommands } from "./commands/analytics"
+import { registerInsightsCommands } from "./commands/insights"
 import { registerDisputesCommands } from "./commands/disputes"
 import { registerInvoicesCommands } from "./commands/invoices"
 import { registerSubscriptionsCommands } from "./commands/subscriptions"
@@ -37,6 +38,14 @@ program
   .option("--api-key <key>", "API key (overrides config)")
   .option("--base-url <url>", "API base URL")
   .option("--format <format>", "Output format: json or table", "table")
+  .option(
+    "--business <id>",
+    "Override: use this business context for the command"
+  )
+  .option(
+    "--personal",
+    "Override: use personal account (ignore active business)"
+  )
   .exitOverride()
 
 registerAuthCommands(program)
@@ -54,6 +63,7 @@ registerApiKeysCommands(program)
 registerTeamCommands(program)
 registerWebhooksCommands(program)
 registerAnalyticsCommands(program)
+registerInsightsCommands(program)
 registerDisputesCommands(program)
 registerInvoicesCommands(program)
 registerSubscriptionsCommands(program)

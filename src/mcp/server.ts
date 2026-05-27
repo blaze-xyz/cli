@@ -1,19 +1,41 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js"
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js"
 import { BlazeClient } from "../sdk/client"
-import { resolveApiKey, resolveBaseUrl } from "../sdk/config"
+import { resolveApiKey, resolveBaseUrl, loadConfig } from "../sdk/config"
+import { getAuthToken } from "../cli/auth-utils"
 import { registerTools } from "./tools"
 
 async function main() {
   const apiKey = resolveApiKey()
-  if (!apiKey) {
+  const bearerToken = await getAuthToken()
+  const config = loadConfig()
+  const activeBusinessId = config?.activeBusinessId
+
+  if (!apiKey && !bearerToken) {
     process.stderr.write(
-      "No API key configured. Set BLAZE_API_KEY environment variable or run `blaze config set-key <key>`.\n"
+      "Not authenticated. Run `blaze auth` to log in, or set BLAZE_API_KEY environment variable.\n"
     )
     process.exit(1)
   }
 
-  const client = new BlazeClient({ apiKey, baseUrl: resolveBaseUrl() })
+  const contextHeaders: Record<string, string> = {}
+  if (activeBusinessId) {
+    contextHeaders["x-business-id"] = activeBusinessId
+  }
+
+  const client = apiKey
+    ? new BlazeClient({
+        apiKey,
+        baseUrl: resolveBaseUrl(),
+        defaultHeaders:
+          Object.keys(contextHeaders).length > 0 ? contextHeaders : undefined,
+      })
+    : new BlazeClient({
+        bearerToken: bearerToken!,
+        baseUrl: resolveBaseUrl(),
+        defaultHeaders:
+          Object.keys(contextHeaders).length > 0 ? contextHeaders : undefined,
+      })
 
   const server = new McpServer({
     name: "blaze",

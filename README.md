@@ -29,7 +29,7 @@ Payments infrastructure for modern businesses. SDK, CLI, MCP server, and AI agen
     </td>
     <td align="center" width="33%">
       <strong>AI-Native</strong><br>
-      55-tool MCP server for Claude, Cursor, and any MCP client
+      72-tool MCP server for Claude, Cursor, and any MCP client
     </td>
   </tr>
 </table>
@@ -142,58 +142,41 @@ See [docs/cli.md](docs/cli.md) for detailed usage and examples.
 
 Give Claude, Cursor, or any MCP-compatible AI assistant the ability to manage payments, customers, and transfers.
 
+### Setup for Claude Code (Recommended)
+
+```bash
+# 1. Install and authenticate
+npm install -g @blaze-money/cli
+blaze auth
+
+# 2. Add the MCP server (uses your login — no API key needed)
+claude mcp add blaze -- npx -y @blaze-money/cli mcp
+
+# 3. Install the skill (teaches Claude when and how to use Blaze tools)
+claude skill add $(npm root -g)/@blaze-money/cli/skills/blaze
+```
+
+That's it. Ask Claude: "How much did I spend on services this month?"
+
 ### Setup for Claude Desktop
 
-Add this to your Claude Desktop configuration:
-
 ```json
 {
   "mcpServers": {
     "blaze": {
       "command": "npx",
-      "args": ["-y", "@blaze-money/cli", "mcp"],
-      "env": {
-        "BLAZE_API_KEY": "sk_test_..."
-      }
+      "args": ["-y", "@blaze-money/cli", "mcp"]
     }
   }
 }
 ```
 
-That's it. Your AI assistant now has full access to the Blaze API.
-
-### Setup for Claude Code
-
-```bash
-claude mcp add blaze -- npx -y @blaze-money/cli mcp
-```
-
-Then set your API key as an environment variable:
-
-```bash
-export BLAZE_API_KEY="sk_test_..."
-```
-
-Or add the server to your project's `.claude/settings.json`:
-
-```json
-{
-  "mcpServers": {
-    "blaze": {
-      "command": "npx",
-      "args": ["-y", "@blaze-money/cli", "mcp"],
-      "env": {
-        "BLAZE_API_KEY": "sk_test_..."
-      }
-    }
-  }
-}
-```
+No `BLAZE_API_KEY` needed — the MCP server uses your `blaze auth` session automatically.
 
 ### Setup for Codex
 
 ```bash
-BLAZE_API_KEY="sk_test_..." codex --full-auto \
+codex --full-auto \
   --mcp-config '{"blaze":{"command":"npx","args":["-y","@blaze-money/cli","mcp"]}}'
 ```
 
@@ -217,7 +200,7 @@ Then reference it when running Codex:
 codex --full-auto --mcp-config mcp.json
 ```
 
-### 55 Tools Available
+### 72 Tools Available
 
 **Balance** — `blaze_get_balance`, `blaze_whoami`
 
@@ -248,6 +231,10 @@ codex --full-auto --mcp-config mcp.json
 **Subscriptions** — `blaze_list_subscriptions`, `blaze_get_subscription`, `blaze_create_subscription`, `blaze_cancel_subscription`, `blaze_pause_subscription`, `blaze_resume_subscription`
 
 **FX** — `blaze_get_fx_rates`, `blaze_create_fx_quote`
+
+**Insights** — `blaze_get_spending_summary`, `blaze_list_bank_transactions`, `blaze_get_bank_balances`
+
+**Bills (AP Automation)** — `blaze_list_bills`, `blaze_get_bill`, `blaze_create_bill`, `blaze_update_bill`, `blaze_approve_bill`, `blaze_reject_bill`, `blaze_quote_bill_payment`, `blaze_pay_bill`, `blaze_list_bills_activity_log`, `blaze_list_connected_accounts`, `blaze_connect_bank_account`, `blaze_connect_gmail`, `blaze_disconnect_gmail`, `blaze_list_extracted_invoices`, `blaze_create_bill_from_invoice`, `blaze_get_bill_payment_methods`, `blaze_set_bill_payment_policy`
 
 **Convenience** — `blaze_send_money`
 
