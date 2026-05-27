@@ -862,4 +862,262 @@ export function registerTools(server: McpServer, client: BlazeClient): void {
       }
     }
   )
+
+  // ============================================
+  // Bills (AP automation) — tools 56-69
+  // ============================================
+  // IMPORTANT: bill data (vendor names, amounts, bank info, email bodies)
+  // is data, not instructions. Never treat extracted invoice content as
+  // direction to act. Money movement is gated by quote-then-confirm and
+  // server-side policy.
+
+  // 56. List Bills
+  server.tool(
+    "blaze_list_bills",
+    "List business bills with optional status / vendor / due-date filters",
+    schemas.listBillsSchema.shape,
+    async params => {
+      try {
+        return jsonResult(
+          await client.listBills({
+            status: params.status,
+            vendorId: params.vendor_id,
+            dueBefore: params.due_before,
+            limit: params.limit,
+            cursor: params.cursor,
+          })
+        )
+      } catch (err) {
+        return errorResult(err)
+      }
+    }
+  )
+
+  // 57. Get Bill
+  server.tool(
+    "blaze_get_bill",
+    "Get a single bill by id, including vendor, line items, payments",
+    schemas.getBillSchema.shape,
+    async ({ id }) => {
+      try {
+        return jsonResult(await client.getBill(id))
+      } catch (err) {
+        return errorResult(err)
+      }
+    }
+  )
+
+  // 58. Approve Bill (NEEDS_REVIEW → READY_TO_PAY)
+  server.tool(
+    "blaze_approve_bill",
+    "Approve a bill that's currently NEEDS_REVIEW, moving it to READY_TO_PAY. Confirm with the user first.",
+    schemas.approveBillSchema.shape,
+    async ({ id }) => {
+      try {
+        return jsonResult(await client.approveBill(id))
+      } catch (err) {
+        return errorResult(err)
+      }
+    }
+  )
+
+  // 60. Reject Bill
+  server.tool(
+    "blaze_reject_bill",
+    "Reject a bill (do not pay). Use when the user identifies a bill as not theirs / spam / wrong.",
+    schemas.rejectBillSchema.shape,
+    async ({ id, reason }) => {
+      try {
+        return jsonResult(await client.rejectBill(id, reason))
+      } catch (err) {
+        return errorResult(err)
+      }
+    }
+  )
+
+  // 61. Quote Bill Payment — phase 1 of two-phase pay
+  server.tool(
+    "blaze_quote_bill_payment",
+    "Get a payment quote for a bill (fees, ETA, provider routing). DO NOT pay before surfacing this quote to the user and getting explicit consent. Quote expires in 15 minutes.",
+    schemas.quoteBillPaymentSchema.shape,
+    async params => {
+      try {
+        return jsonResult(
+          await client.quoteBillPayment({
+            billId: params.bill_id,
+            sourceFundingAccountId: params.source_funding_account_id ?? null,
+            expediteOption: params.expedite_option ?? null,
+          })
+        )
+      } catch (err) {
+        return errorResult(err)
+      }
+    }
+  )
+
+  // 62. Pay Bill — phase 2, irrevocable
+  server.tool(
+    "blaze_pay_bill",
+    "IRREVOCABLE. Execute a bill payment using a fresh quote_id from blaze_quote_bill_payment. Server enforces policy: agent payments may be denied or require approval. Always surface the quote and get explicit user consent BEFORE calling this tool. confirm must be literally true.",
+    schemas.payBillSchema.shape,
+    async params => {
+      try {
+        return jsonResult(
+          await client.payBill({
+            billId: params.bill_id,
+            quoteId: params.quote_id,
+            confirm: params.confirm,
+          })
+        )
+      } catch (err) {
+        return errorResult(err)
+      }
+    }
+  )
+
+  // 63. List Vendors
+  server.tool(
+    "blaze_list_bill_vendors",
+    "List bill vendors for the active business",
+    schemas.listVendorsSchema.shape,
+    async params => {
+      try {
+        return jsonResult(await client.listVendors(params))
+      } catch (err) {
+        return errorResult(err)
+      }
+    }
+  )
+
+  // 64. Get Vendor
+  server.tool(
+    "blaze_get_bill_vendor",
+    "Get a single bill vendor",
+    schemas.getVendorSchema.shape,
+    async ({ id }) => {
+      try {
+        return jsonResult(await client.getVendor(id))
+      } catch (err) {
+        return errorResult(err)
+      }
+    }
+  )
+
+  // 65. Connect Gmail (start) — two-tool dance for agents
+  server.tool(
+    "blaze_connect_gmail_start",
+    "Start the Gmail OAuth flow. Returns an auth URL the user must open in their browser. After they grant consent, call blaze_connect_gmail_finalize with the session id to check completion.",
+    schemas.generateGmailAuthUrlSchema.shape,
+    async () => {
+      try {
+        return jsonResult(await client.generateGmailAuthUrl())
+      } catch (err) {
+        return errorResult(err)
+      }
+    }
+  )
+
+  // 66. Connect Gmail (finalize)
+  server.tool(
+    "blaze_connect_gmail_finalize",
+    "Check the status of an in-flight Gmail OAuth session. Call repeatedly after the user opens the auth URL until status is COMPLETE.",
+    schemas.getGmailSessionSchema.shape,
+    async ({ session_id }) => {
+      try {
+        return jsonResult(await client.getGmailConnectSession(session_id))
+      } catch (err) {
+        return errorResult(err)
+      }
+    }
+  )
+
+  // 67. List Gmail Integrations
+  server.tool(
+    "blaze_list_gmail_integrations",
+    "List connected Gmail accounts for the active business",
+    schemas.listGmailIntegrationsSchema.shape,
+    async () => {
+      try {
+        return jsonResult(await client.listGmailIntegrations())
+      } catch (err) {
+        return errorResult(err)
+      }
+    }
+  )
+
+  // 68. Trigger Gmail Sync
+  server.tool(
+    "blaze_sync_bills",
+    "Manually trigger a Gmail sync run. Use sparingly — sync is already scheduled every 5 minutes per integration.",
+    schemas.triggerGmailSyncSchema.shape,
+    async ({ integration_id }) => {
+      try {
+        return jsonResult(await client.triggerGmailSync(integration_id))
+      } catch (err) {
+        return errorResult(err)
+      }
+    }
+  )
+
+  // 69. List Pending Approvals
+  server.tool(
+    "blaze_list_pending_bill_approvals",
+    "List bills currently awaiting human approval before they can be paid",
+    schemas.listPendingApprovalsSchema.shape,
+    async () => {
+      try {
+        return jsonResult(await client.listPendingBillApprovals())
+      } catch (err) {
+        return errorResult(err)
+      }
+    }
+  )
+
+  // 70. Approve Approval Request
+  server.tool(
+    "blaze_approve_bill_approval_request",
+    "Approve a pending approval request, unlocking the bill so it can be paid",
+    schemas.approveBillApprovalRequestSchema.shape,
+    async ({ id }) => {
+      try {
+        return jsonResult(await client.approveBillApprovalRequest(id))
+      } catch (err) {
+        return errorResult(err)
+      }
+    }
+  )
+
+  // 71. Reject Approval Request
+  server.tool(
+    "blaze_reject_bill_approval_request",
+    "Reject a pending approval request",
+    schemas.rejectBillApprovalRequestSchema.shape,
+    async ({ id, reason }) => {
+      try {
+        return jsonResult(await client.rejectBillApprovalRequest(id, reason))
+      } catch (err) {
+        return errorResult(err)
+      }
+    }
+  )
+
+  // 72. Bills Activity Log
+  server.tool(
+    "blaze_list_bills_activity_log",
+    "List the activity log filtered to bill-related events. Useful for forensic investigation of agent vs human pays and policy decisions.",
+    schemas.listBillsActivityLogSchema.shape,
+    async ({ category, bill_id, limit }) => {
+      try {
+        return jsonResult(
+          await client.listBillsActivityLog({
+            category,
+            resourceId: bill_id,
+            limit,
+          })
+        )
+      } catch (err) {
+        return errorResult(err)
+      }
+    }
+  )
 }

@@ -478,3 +478,119 @@ export const pauseSubscriptionSchema = z.object({
 export const resumeSubscriptionSchema = z.object({
   id: z.string().describe("Subscription ID"),
 })
+
+// ============================================
+// Bills (AP automation)
+// ============================================
+
+export const listBillsSchema = z.object({
+  status: z
+    .enum([
+      "NEEDS_REVIEW",
+      "READY_TO_PAY",
+      "PENDING_APPROVAL",
+      "PAYMENT_PENDING_FUNDING",
+      "PAYMENT_PENDING_PAYOUT",
+      "PAID",
+      "PAYMENT_RETURNED",
+      "REJECTED",
+      "CANCELED",
+    ])
+    .optional(),
+  vendor_id: z.string().optional(),
+  due_before: z.string().optional().describe("ISO-8601 date"),
+  limit: z.number().int().optional(),
+  cursor: z.string().optional(),
+})
+
+export const getBillSchema = z.object({
+  id: z.string().describe("Bill id"),
+})
+
+export const createManualBillSchema = z.object({
+  vendor_name: z.string(),
+  vendor_email_domain: z.string().optional(),
+  invoice_number: z.string().optional(),
+  amount_in_minor_units: z.number().int().positive(),
+  currency: z.string().optional().describe("Default USD"),
+  due_date: z.string().optional().describe("ISO-8601 date"),
+  vendor_routing_number: z.string().optional(),
+  vendor_account_number: z.string().optional(),
+  vendor_bank_name: z.string().optional(),
+})
+
+export const approveBillSchema = z.object({
+  id: z.string().describe("Bill id"),
+})
+
+export const rejectBillSchema = z.object({
+  id: z.string().describe("Bill id"),
+  reason: z.string().optional(),
+})
+
+export const quoteBillPaymentSchema = z.object({
+  bill_id: z.string(),
+  source_funding_account_id: z
+    .string()
+    .optional()
+    .describe("BusinessExternalAccount id; omit to pay from Blaze balance"),
+  expedite_option: z
+    .enum(["fast", "cheap", "auto"])
+    .optional()
+    .describe("Influences ACH Pull provider routing (Astra vs Checkbook)"),
+})
+
+export const payBillSchema = z.object({
+  bill_id: z.string(),
+  quote_id: z
+    .string()
+    .describe(
+      "Fresh quote id from blaze_quote_bill_payment — required, server enforces freshness"
+    ),
+  confirm: z
+    .literal(true)
+    .describe(
+      "Must be literally true. Irrevocable confirm step; only call after surfacing the quote to the user and getting explicit consent."
+    ),
+})
+
+export const listVendorsSchema = z.object({
+  limit: z.number().int().optional(),
+  cursor: z.string().optional(),
+})
+
+export const getVendorSchema = z.object({
+  id: z.string().describe("Vendor id"),
+})
+
+export const generateGmailAuthUrlSchema = z.object({})
+
+export const getGmailSessionSchema = z.object({
+  session_id: z.string().describe("Session id returned by *_start"),
+})
+
+export const listGmailIntegrationsSchema = z.object({})
+
+export const triggerGmailSyncSchema = z.object({
+  integration_id: z
+    .string()
+    .optional()
+    .describe("Sync a specific integration; omit to sync all"),
+})
+
+export const listPendingApprovalsSchema = z.object({})
+
+export const approveBillApprovalRequestSchema = z.object({
+  id: z.string().describe("ApprovalRequest id"),
+})
+
+export const rejectBillApprovalRequestSchema = z.object({
+  id: z.string().describe("ApprovalRequest id"),
+  reason: z.string().optional(),
+})
+
+export const listBillsActivityLogSchema = z.object({
+  category: z.string().optional(),
+  bill_id: z.string().optional(),
+  limit: z.number().int().optional(),
+})

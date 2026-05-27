@@ -25,6 +25,8 @@ import { registerSendCommand } from "./commands/send"
 import { registerContactsCommands } from "./commands/contacts"
 import { registerPaymentsCommands } from "./commands/payments"
 import { registerMemoryCommands } from "./commands/memory"
+import { registerBillsCommands } from "./commands/bills"
+import { registerWhoamiCommands } from "./commands/whoami"
 
 const program = new Command()
 
@@ -62,6 +64,8 @@ registerSendCommand(program)
 registerContactsCommands(program)
 registerPaymentsCommands(program)
 registerMemoryCommands(program)
+registerBillsCommands(program)
+registerWhoamiCommands(program)
 
 try {
   program.parse()

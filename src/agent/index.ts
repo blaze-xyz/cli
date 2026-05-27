@@ -5,6 +5,15 @@ import { MemoryStore } from "./memory"
 import { buildSystemPrompt } from "./system-prompt"
 import { buildTools, executeTool } from "./tools"
 
+// ============================================
+// Loop bounds — defense against adversarial inputs that try to pin the
+// agent loop (e.g. invoice text instructing repeated retries). See
+// docs/projects/bills-ap-automation/agent-flow.md §6 layer 7.
+// ============================================
+const MAX_TURNS = 20
+const MAX_TOOL_CALLS = 50
+const MAX_INPUT_TOKENS = 100_000
+
 export async function runAgent(
   userInput: string,
   client: BlazeClient
@@ -19,9 +28,33 @@ export async function runAgent(
     { role: "user", content: userInput },
   ]
 
-  // Agentic loop
+  let turns = 0
+  let toolCalls = 0
+  let cumulativeInputTokens = 0
+
+  // Agentic loop with bounds
   // eslint-disable-next-line no-constant-condition
   while (true) {
+    if (turns >= MAX_TURNS) {
+      process.stderr.write(
+        `\n[agent] Hit MAX_TURNS=${MAX_TURNS}. Stopping. If this was a long task, split it up.\n`
+      )
+      return
+    }
+    if (toolCalls >= MAX_TOOL_CALLS) {
+      process.stderr.write(
+        `\n[agent] Hit MAX_TOOL_CALLS=${MAX_TOOL_CALLS}. Stopping.\n`
+      )
+      return
+    }
+    if (cumulativeInputTokens >= MAX_INPUT_TOKENS) {
+      process.stderr.write(
+        `\n[agent] Hit MAX_INPUT_TOKENS=${MAX_INPUT_TOKENS}. Stopping.\n`
+      )
+      return
+    }
+
+    turns++
     const response = await anthropic.messages.create({
       model,
       system: systemPrompt,
@@ -29,6 +62,8 @@ export async function runAgent(
       tools,
       max_tokens: 4096,
     })
+
+    cumulativeInputTokens += response.usage?.input_tokens ?? 0
 
     // Print text blocks as they arrive
     for (const block of response.content) {
@@ -47,6 +82,8 @@ export async function runAgent(
 
       for (const block of response.content) {
         if (block.type === "tool_use") {
+          toolCalls++
+          if (toolCalls > MAX_TOOL_CALLS) break
           try {
             const result = await executeTool(
               block.name,

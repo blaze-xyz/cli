@@ -167,6 +167,227 @@ export class BlazeClient {
     return this.request<T>("GET", path)
   }
 
+  // ============================================
+  // Bills (AP automation) — thin wrappers over graphqlRequest
+  // ============================================
+
+  async listBills(params: Record<string, unknown> = {}) {
+    const q = `query ($status: BusinessBillStatus, $vendorId: ID, $dueBefore: DateTime, $limit: Int, $cursor: String) {
+      businessBills(status: $status, vendorId: $vendorId, dueBefore: $dueBefore, limit: $limit, cursor: $cursor) {
+        nodes { id invoiceNumber amountInMinorUnits currencyCode dueDate status source extractionConfidence bankFieldsChanged vendor { id name } }
+        pageInfo { hasNextPage endCursor totalCount }
+      }
+    }`
+    const data = await this.graphqlRequest<{ businessBills: unknown }>(
+      q,
+      params
+    )
+    return data.businessBills
+  }
+
+  async getBill(id: string) {
+    const q = `query ($id: ID!) { businessBill(id: $id) {
+      id invoiceNumber amountInMinorUnits currencyCode issueDate dueDate
+      source status version requiresApproval bankFieldsChanged
+      extractionConfidence extractionModelUsed
+      vendor { id name primaryEmailDomain defaultRoutingNumber defaultAccountLast4 defaultBankName verifiedAt }
+      lineItems { id description quantity unitPriceInMinorUnits amountInMinorUnits ordinal }
+      payments { id status leg1Provider leg2Provider createdAt }
+    } }`
+    const data = await this.graphqlRequest<{ businessBill: unknown }>(q, { id })
+    return data.businessBill
+  }
+
+  async createManualBill(input: Record<string, unknown>) {
+    const q = `mutation ($input: CreateManualBusinessBillInput!) {
+      createManualBusinessBill(input: $input) {
+        id status amountInMinorUnits currencyCode dueDate vendor { id name }
+      }
+    }`
+    const data = await this.graphqlRequest<{
+      createManualBusinessBill: unknown
+    }>(q, { input })
+    return data.createManualBusinessBill
+  }
+
+  async approveBill(id: string) {
+    const q = `mutation ($id: ID!) { approveBusinessBill(id: $id) { id status approvedAt } }`
+    const data = await this.graphqlRequest<{ approveBusinessBill: unknown }>(
+      q,
+      {
+        id,
+      }
+    )
+    return data.approveBusinessBill
+  }
+
+  async rejectBill(id: string, reason?: string) {
+    const q = `mutation ($id: ID!, $reason: String) { rejectBusinessBill(id: $id, reason: $reason) { id status rejectionReason } }`
+    const data = await this.graphqlRequest<{ rejectBusinessBill: unknown }>(q, {
+      id,
+      reason,
+    })
+    return data.rejectBusinessBill
+  }
+
+  async quoteBillPayment(input: Record<string, unknown>) {
+    const q = `mutation ($input: QuoteBusinessBillPaymentInput!) {
+      quoteBusinessBillPayment(input: $input) {
+        id billId leg1Provider leg1FeeInMinorUnits leg2Provider leg2FeeInMinorUnits totalFeeInMinorUnits etaBusinessDays expiresAt
+      }
+    }`
+    const data = await this.graphqlRequest<{
+      quoteBusinessBillPayment: unknown
+    }>(q, { input })
+    return data.quoteBusinessBillPayment
+  }
+
+  async payBill(input: Record<string, unknown>) {
+    const q = `mutation ($input: PayBusinessBillInput!) {
+      payBusinessBill(input: $input) {
+        id billId status leg1Provider leg2Provider createdAt
+      }
+    }`
+    const data = await this.graphqlRequest<{ payBusinessBill: unknown }>(q, {
+      input,
+    })
+    return data.payBusinessBill
+  }
+
+  async listVendors(params: Record<string, unknown> = {}) {
+    const q = `query ($limit: Int, $cursor: String) {
+      businessVendors(limit: $limit, cursor: $cursor) {
+        id name primaryEmailDomain defaultAccountLast4 verifiedAt
+      }
+    }`
+    const data = await this.graphqlRequest<{ businessVendors: unknown }>(
+      q,
+      params
+    )
+    return data.businessVendors
+  }
+
+  async getVendor(id: string) {
+    const q = `query ($id: ID!) { businessVendor(id: $id) {
+      id name primaryEmailDomain knownEmailDomains defaultRoutingNumber defaultAccountLast4 defaultBankName verifiedAt
+    } }`
+    const data = await this.graphqlRequest<{ businessVendor: unknown }>(q, {
+      id,
+    })
+    return data.businessVendor
+  }
+
+  async generateGmailAuthUrl() {
+    const q = `mutation { generateGmailAuthUrl { id status authUrl expiresAt } }`
+    const data = await this.graphqlRequest<{
+      generateGmailAuthUrl: unknown
+    }>(q)
+    return data.generateGmailAuthUrl
+  }
+
+  async getGmailConnectSession(sessionId: string) {
+    const q = `query ($sessionId: ID!) { gmailConnectSession(sessionId: $sessionId) {
+      id status authUrl errorMessage expiresAt integration { id gmailAddress status }
+    } }`
+    const data = await this.graphqlRequest<{
+      gmailConnectSession: unknown
+    }>(q, { sessionId })
+    return data.gmailConnectSession
+  }
+
+  async listGmailIntegrations() {
+    const q = `query { businessGmailIntegrations { id gmailAddress status lastSyncedAt lastSyncError createdAt } }`
+    const data = await this.graphqlRequest<{
+      businessGmailIntegrations: unknown
+    }>(q)
+    return data.businessGmailIntegrations
+  }
+
+  async triggerGmailSync(integrationId?: string) {
+    const q = `mutation ($integrationId: ID) { triggerBusinessGmailSync(integrationId: $integrationId) }`
+    const data = await this.graphqlRequest<{
+      triggerBusinessGmailSync: boolean
+    }>(q, { integrationId })
+    return data.triggerBusinessGmailSync
+  }
+
+  async listPendingBillApprovals() {
+    const q = `query { businessBillPendingApprovals {
+      id resourceType resourceId reason policyRuleFired paymentIntent status expiresAt createdAt
+    } }`
+    const data = await this.graphqlRequest<{
+      businessBillPendingApprovals: unknown
+    }>(q)
+    return data.businessBillPendingApprovals
+  }
+
+  async approveBillApprovalRequest(id: string) {
+    const q = `mutation ($id: ID!) { approveBusinessBillApprovalRequest(id: $id) { id status } }`
+    const data = await this.graphqlRequest<{
+      approveBusinessBillApprovalRequest: unknown
+    }>(q, { id })
+    return data.approveBusinessBillApprovalRequest
+  }
+
+  async rejectBillApprovalRequest(id: string, reason?: string) {
+    const q = `mutation ($id: ID!, $reason: String) { rejectBusinessBillApprovalRequest(id: $id, reason: $reason) { id status } }`
+    const data = await this.graphqlRequest<{
+      rejectBusinessBillApprovalRequest: unknown
+    }>(q, { id, reason })
+    return data.rejectBusinessBillApprovalRequest
+  }
+
+  async listBillsActivityLog(params: Record<string, unknown> = {}) {
+    const q = `query ($category: String, $resourceId: ID, $limit: Int) {
+      businessActivityLog(category: $category, resourceId: $resourceId, limit: $limit) {
+        id category actorType outcome message resourceType resourceId policyRule createdAt
+      }
+    }`
+    const data = await this.graphqlRequest<{ businessActivityLog: unknown }>(
+      q,
+      params
+    )
+    return data.businessActivityLog
+  }
+
+  // Generic GraphQL helper — bills surfaces are GraphQL-only on the
+  // server side; this lets the existing apiKey / bearerToken /
+  // x-business-id auth flow apply unchanged.
+  async graphqlRequest<T>(
+    query: string,
+    variables?: Record<string, unknown>
+  ): Promise<T> {
+    const url = `${this.baseUrl}/graphql`
+    const headers: Record<string, string> = {
+      "Content-Type": "application/json",
+      ...this.defaultHeaders,
+    }
+    if (this.bearerToken) {
+      headers["Authorization"] = `Bearer ${this.bearerToken}`
+    } else if (this.apiKey) {
+      headers["X-API-Key"] = this.apiKey
+    }
+    const res = await fetch(url, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ query, variables }),
+    })
+    if (!res.ok) {
+      throw new Error(`GraphQL HTTP ${res.status}: ${res.statusText}`)
+    }
+    const json = (await res.json()) as {
+      data?: T
+      errors?: Array<{ message: string }>
+    }
+    if (json.errors?.length) {
+      throw new Error(json.errors[0].message)
+    }
+    if (!json.data) {
+      throw new Error("GraphQL response missing data")
+    }
+    return json.data
+  }
+
   // Balance
   async getBalance(): Promise<Balance> {
     return this.request<Balance>("GET", "/v1/balance")

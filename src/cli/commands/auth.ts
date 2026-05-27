@@ -1,7 +1,7 @@
 import { Command } from "commander"
 import { BlazeClient } from "../../sdk/client"
 import { resolveBaseUrl, saveConfig, detectEnvironment } from "../../sdk/config"
-import { handleError } from "../utils"
+import { getClient, getConfig, handleError, writeConfig } from "../utils"
 import { getAuth, clearAuth, saveAuth, requireAuth } from "../auth-utils"
 
 const API_ENDPOINT = process.env.BLAZE_API_URL || "https://api.blaze.money"
@@ -201,6 +201,52 @@ export function registerAuthCommands(program: Command): void {
               user: tokenResponse.user!,
               created_at: Date.now(),
             })
+
+            // Best-effort: fetch businesses and auto-select if exactly one.
+            // Failures here must NOT abort login — the user is authenticated.
+            try {
+              const client = await getClient({})
+              const businessesResult = await client.get<{
+                object: string
+                data: Array<{ id: string; name: string; role: string }>
+              }>("/v1/me/businesses")
+              const businesses = businessesResult.data
+
+              if (businesses.length === 1) {
+                const only = businesses[0]!
+                const config = getConfig() ?? { api_key: "" }
+                config.activeBusinessId = only.id
+                writeConfig(config)
+                console.log(
+                  chalk.green(
+                    `\n✓ Active business set: ${only.name} (${only.role})`
+                  )
+                )
+              } else if (businesses.length > 1) {
+                console.log(`\nYou belong to ${businesses.length} businesses:`)
+                for (const b of businesses) {
+                  console.log(
+                    `  - ${b.name} (${b.role})  -> blaze businesses use ${b.id}`
+                  )
+                }
+                console.log(
+                  chalk.dim("Run blaze businesses use <id> to pick one.")
+                )
+              }
+            } catch (businessFetchError) {
+              // Silently swallow — user is authenticated, this is best-effort onboarding.
+              if (process.env.DEBUG) {
+                console.error(
+                  chalk.dim(
+                    `[debug] Failed to fetch businesses: ${
+                      businessFetchError instanceof Error
+                        ? businessFetchError.message
+                        : String(businessFetchError)
+                    }`
+                  )
+                )
+              }
+            }
 
             const user =
               tokenResponse.user!.email || tokenResponse.user!.blazetag
