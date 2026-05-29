@@ -10,20 +10,55 @@ export function registerFxCommands(program: Command): void {
   fx.command("rates")
     .description("Get current exchange rates")
     .option("--base <currency>", "Base currency code")
-    .action(async (opts: { base?: string }) => {
+    .option("--from <currency>", "Source currency (alias for --base)")
+    .option("--to <currency>", "Filter to a specific target currency")
+    .action(async (opts: { base?: string; from?: string; to?: string }) => {
       try {
         const globals = getGlobalOpts(program)
         const client = await getClient(globals)
-        const result = await client.getFxRates(opts.base)
+        const baseCurrency = opts.from || opts.base
+        const result = await client.getFxRates(baseCurrency)
+
+        const r = result as unknown as Record<string, unknown>
+        const base = (r.base as string) || baseCurrency || "USD"
+        const rates = (r.rates || r) as Record<string, unknown>
+
+        // Filter to specific target currency if --to is provided
+        if (opts.to) {
+          const targetCode = opts.to.toUpperCase()
+          // Lookup case-insensitively since API may return lowercase keys
+          const rateEntry = Object.entries(rates).find(
+            ([k]) => k.toUpperCase() === targetCode
+          )
+          if (!rateEntry) {
+            handleError(
+              new Error(
+                `No rate found for ${targetCode} from base ${base.toUpperCase()}`
+              )
+            )
+          }
+
+          const [, rate] = rateEntry!
+
+          if (globals.format === "json") {
+            formatOutput({ base, rates: { [targetCode]: rate } }, "json")
+            return
+          }
+
+          console.log("")
+          console.log(`  Base: ${base.toUpperCase()}`)
+          console.log("")
+          console.log(
+            `  ${targetCode.padEnd(5)} ${typeof rate === "number" ? rate.toFixed(4) : rate}`
+          )
+          console.log("")
+          return
+        }
 
         if (globals.format === "json") {
           formatOutput(result, "json")
           return
         }
-
-        const r = result as unknown as Record<string, unknown>
-        const base = (r.base as string) || opts.base || "USD"
-        const rates = (r.rates || r) as Record<string, unknown>
 
         console.log("")
         console.log(`  Base: ${base}`)

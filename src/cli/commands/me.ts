@@ -10,7 +10,7 @@ export function registerMeCommands(program: Command): void {
     .action(async () => {
       try {
         const globals = getGlobalOpts(program)
-        const client = await getClient(globals)
+        const client = await getClient({ ...globals, personal: true })
         const profile = await client.getMe()
 
         if (globals.format === "json") {
@@ -41,7 +41,7 @@ export function registerMeCommands(program: Command): void {
     .action(async (tag: string) => {
       try {
         const globals = getGlobalOpts(program)
-        const client = await getClient(globals)
+        const client = await getClient({ ...globals, personal: true })
         await client.setBlazetag(tag)
         console.log(`Blaze tag set to @${tag}.`)
       } catch (err) {
