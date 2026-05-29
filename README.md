@@ -5,36 +5,32 @@
 <h1 align="center">@blaze-money/cli</h1>
 
 <p align="center">
-Payments infrastructure for modern businesses. SDK, CLI, MCP server, and AI agent — all in one package.
+Give your AI agent the ability to manage payments, analyze spending, and automate financial operations.
 </p>
 
 <p align="center">
   <a href="https://www.npmjs.com/package/@blaze-money/cli"><img src="https://img.shields.io/npm/v/@blaze-money/cli.svg" alt="npm version"></a>
   <a href="https://opensource.org/licenses/MIT"><img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="License: MIT"></a>
   <a href="https://nodejs.org"><img src="https://img.shields.io/badge/node-%3E%3D18-brightgreen.svg" alt="Node >= 18"></a>
-  <a href="https://www.typescriptlang.org"><img src="https://img.shields.io/badge/TypeScript-strict-blue.svg" alt="TypeScript"></a>
 </p>
 
-<br>
+---
 
-<table align="center">
-  <tr>
-    <td align="center" width="33%">
-      <strong>TypeScript SDK</strong><br>
-      Type-safe client for every Blaze API endpoint
-    </td>
-    <td align="center" width="33%">
-      <strong>CLI</strong><br>
-      Manage payments, customers, and transfers from your terminal
-    </td>
-    <td align="center" width="33%">
-      <strong>AI-Native</strong><br>
-      72-tool MCP server for Claude, Cursor, and any MCP client
-    </td>
-  </tr>
-</table>
+## What You Can Do
 
-<br>
+```
+You:   "How much did I spend on Brex this month?"
+Agent: You spent $2,720.45 on Brex across 2 transactions (May 1–27).
+
+You:   "Pay all bills due this week"
+Agent: 3 bills due by Friday totaling $3,478.17. Fees: $4.50. Confirm? → Paid.
+
+You:   "Send $500 to @maria"
+Agent: Sent $500 USD to Maria Santos. Transfer ID: txn_xyz789.
+
+You:   "Create a payment link for $2,000 — client invoice"
+Agent: Created: https://pay.blaze.money/links/lnk_abc123
+```
 
 ---
 
@@ -43,122 +39,58 @@ Payments infrastructure for modern businesses. SDK, CLI, MCP server, and AI agen
 ```bash
 npm install -g @blaze-money/cli
 blaze auth
-# Opens browser for authentication
-blaze balance
+blaze businesses use        # select your business (if you have one)
 ```
 
-```json
-{
-  "object": "balance",
-  "available": 10250.00,
-  "pending": 500.00,
-  "currency": "USD"
-}
-```
-
----
-
-## SDK
-
-Use Blaze programmatically in any Node.js or TypeScript project.
-
-```typescript
-import { BlazeClient } from "@blaze-money/cli"
-
-const client = new BlazeClient({ apiKey: "sk_test_..." })
-
-// Check balance
-const balance = await client.getBalance()
-
-// Create a customer
-const customer = await client.createCustomer({
-  email: "maria@example.com",
-  first_name: "Maria",
-  last_name: "Santos",
-})
-
-// Send a transfer
-const transfer = await client.createTransfer({
-  amount: 500,
-  currency: "USD",
-  customer_id: customer.id,
-})
-
-// Get an FX quote
-const quote = await client.createFxQuote({
-  from_currency: "USD",
-  to_currency: "MXN",
-  amount: 500,
-})
-```
-
-Every method returns typed responses. Errors throw typed exceptions (`BlazeAuthenticationError`, `BlazeValidationError`, etc.) so you always know what went wrong.
-
-See [docs/sdk.md](docs/sdk.md) for the full SDK reference.
-
----
-
-## CLI
-
-A complete command-line interface for your Blaze account.
-
-| Command | Description |
-|---------|-------------|
-| `blaze auth` | Authenticate via browser (recommended) |
-| `blaze auth login --api-key <key>` | Authenticate with API key (legacy) |
-| `blaze auth whoami` | Show current authentication status |
-| `blaze auth logout` | Log out and clear credentials |
-| `blaze balance` | Check account balance |
-| `blaze customers list\|get\|create\|update\|archive` | Manage customers |
-| `blaze transfers list\|get\|create` | Manage transfers |
-| `blaze withdrawals list\|get\|create` | Manage withdrawals |
-| `blaze payment-links list\|get\|create\|update\|cancel` | Payment links |
-| `blaze accounts list\|create\|delete` | External accounts |
-| `blaze recipients list\|add\|remove` | Manage recipients |
-| `blaze transactions list\|get` | View transactions |
-| `blaze api-keys list\|create\|update\|revoke` | Manage API keys |
-| `blaze team list\|invite\|update-role\|remove` | Manage team members |
-| `blaze webhooks list\|get\|create\|update\|delete` | Webhook endpoints |
-| `blaze analytics overview` | Transaction analytics |
-| `blaze disputes list\|get\|submit-evidence\|close` | Manage disputes |
-| `blaze invoices list\|get\|create\|send\|mark-paid\|void` | Invoices |
-| `blaze subscriptions list\|get\|create\|cancel\|pause\|resume` | Subscriptions |
-| `blaze fx rates\|quote` | FX rates and quotes |
-| `blaze agent "<command>"` | Natural language agent |
-
-### Global Flags
-
-```
---api-key     Override the API key for a single command
---base-url    Point to a different Blaze API environment
---format      Output format: json | table (default: json)
-```
-
-See [docs/cli.md](docs/cli.md) for detailed usage and examples.
-
----
-
-## AI-Native Payments
-
-Give Claude, Cursor, or any MCP-compatible AI assistant the ability to manage payments, customers, and transfers.
-
-### Setup for Claude Code (Recommended)
+### Add to Claude Code
 
 ```bash
-# 1. Install and authenticate
-npm install -g @blaze-money/cli
-blaze auth
-
-# 2. Add the MCP server (uses your login — no API key needed)
 claude mcp add blaze -- npx -y @blaze-money/cli mcp
-
-# 3. Install the skill (teaches Claude when and how to use Blaze tools)
 claude skill add $(npm root -g)/@blaze-money/cli/skills/blaze
 ```
 
-That's it. Ask Claude: "How much did I spend on services this month?"
+Done. Ask your agent anything about your finances.
 
-### Setup for Claude Desktop
+### Add to Codex
+
+```bash
+codex --full-auto --mcp-config '{"blaze":{"command":"npx","args":["-y","@blaze-money/cli","mcp"]}}'
+```
+
+---
+
+## Other AI Environments
+
+The Blaze skill ships with the CLI package. For environments that support skills, install with:
+
+```bash
+claude skill add $(npm root -g)/@blaze-money/cli/skills/blaze
+```
+
+For environments that only support MCP servers, add this config:
+
+```json
+{
+  "command": "npx",
+  "args": ["-y", "@blaze-money/cli", "mcp"]
+}
+```
+
+No API key needed — the server uses your `blaze auth` session.
+
+| Environment | Config Location | Notes |
+|-------------|-----------------|-------|
+| **Claude Code** | `claude mcp add` + `claude skill add` | Full skill support |
+| **Codex** | `--mcp-config` flag or `mcp.json` | Inline or file-based |
+| **Claude Desktop** | `~/Library/Application Support/Claude/claude_desktop_config.json` | Restart after edit |
+| **Cursor** | `.cursor/mcp.json` | Project-level |
+| **Windsurf** | `.windsurf/mcp.json` | Project-level |
+| **Continue.dev** | `.continue/config.json` | MCP section |
+| **Cline** | VS Code extension settings | MCP servers section |
+| **Zed** | Zed settings | Extensions → MCP |
+
+<details>
+<summary>Full config example (Claude Desktop / Cursor / Windsurf)</summary>
 
 ```json
 {
@@ -171,182 +103,95 @@ That's it. Ask Claude: "How much did I spend on services this month?"
 }
 ```
 
-No `BLAZE_API_KEY` needed — the MCP server uses your `blaze auth` session automatically.
+</details>
 
-### Setup for Codex
+<details>
+<summary>Full config example (Codex — file-based)</summary>
 
-```bash
-codex --full-auto \
-  --mcp-config '{"blaze":{"command":"npx","args":["-y","@blaze-money/cli","mcp"]}}'
-```
-
-Or create an `mcp.json` file in your project root:
+Create `mcp.json` in your project root:
 
 ```json
 {
   "blaze": {
     "command": "npx",
-    "args": ["-y", "@blaze-money/cli", "mcp"],
-    "env": {
-      "BLAZE_API_KEY": "sk_test_..."
-    }
+    "args": ["-y", "@blaze-money/cli", "mcp"]
   }
 }
 ```
 
-Then reference it when running Codex:
+Then: `codex --full-auto --mcp-config mcp.json`
 
-```bash
-codex --full-auto --mcp-config mcp.json
-```
-
-### 72 Tools Available
-
-**Balance** — `blaze_get_balance`, `blaze_whoami`
-
-**Customers** — `blaze_list_customers`, `blaze_get_customer`, `blaze_create_customer`, `blaze_update_customer`, `blaze_archive_customer`
-
-**External Accounts** — `blaze_list_external_accounts`, `blaze_create_external_account`, `blaze_delete_external_account`
-
-**Transfers** — `blaze_list_transfers`, `blaze_get_transfer`, `blaze_create_transfer`
-
-**Withdrawals** — `blaze_list_withdrawals`, `blaze_get_withdrawal`, `blaze_create_withdrawal`
-
-**Payment Links** — `blaze_list_payment_links`, `blaze_get_payment_link`, `blaze_create_payment_link`, `blaze_update_payment_link`, `blaze_cancel_payment_link`
-
-**Virtual Accounts** — `blaze_list_virtual_accounts`, `blaze_get_virtual_account`, `blaze_create_virtual_account`
-
-**Transactions** — `blaze_list_transactions`, `blaze_get_transaction`
-
-**Team Members** — `blaze_list_team_members`, `blaze_list_pending_invitations`, `blaze_invite_team_member`, `blaze_update_member_role`
-
-**Webhooks** — `blaze_list_webhooks`, `blaze_get_webhook`, `blaze_create_webhook`, `blaze_update_webhook`, `blaze_delete_webhook`
-
-**Analytics** — `blaze_get_analytics_overview`
-
-**Disputes** — `blaze_list_disputes`, `blaze_get_dispute`, `blaze_submit_dispute_evidence`, `blaze_close_dispute`
-
-**Invoices** — `blaze_list_invoices`, `blaze_get_invoice`, `blaze_create_invoice`, `blaze_send_invoice`, `blaze_mark_invoice_paid`, `blaze_void_invoice`
-
-**Subscriptions** — `blaze_list_subscriptions`, `blaze_get_subscription`, `blaze_create_subscription`, `blaze_cancel_subscription`, `blaze_pause_subscription`, `blaze_resume_subscription`
-
-**FX** — `blaze_get_fx_rates`, `blaze_create_fx_quote`
-
-**Insights** — `blaze_get_spending_summary`, `blaze_list_bank_transactions`, `blaze_get_bank_balances`
-
-**Bills (AP Automation)** — `blaze_list_bills`, `blaze_get_bill`, `blaze_create_bill`, `blaze_update_bill`, `blaze_approve_bill`, `blaze_reject_bill`, `blaze_quote_bill_payment`, `blaze_pay_bill`, `blaze_list_bills_activity_log`, `blaze_list_connected_accounts`, `blaze_connect_bank_account`, `blaze_connect_gmail`, `blaze_disconnect_gmail`, `blaze_list_extracted_invoices`, `blaze_create_bill_from_invoice`, `blaze_get_bill_payment_methods`, `blaze_set_bill_payment_policy`
-
-**Convenience** — `blaze_send_money`
-
-### How It Works
-
-```
-Your AI Assistant  <-->  stdio  <-->  Blaze MCP Server  <-->  Blaze REST API
-```
-
-The MCP server communicates over standard input/output using the [Model Context Protocol](https://modelcontextprotocol.io), giving any compatible AI client structured access to the full Blaze API surface.
-
-See [docs/mcp.md](docs/mcp.md) for integration guides and advanced configuration.
+</details>
 
 ---
 
-## Agent Mode
+## CLI
 
-Natural language interface for common payment operations.
-
-```bash
-blaze agent "send $500 to maria@example.com"
-```
-
-```
-[>>>] Looking up customer: maria@example.com
-[ ->] Customer found: Maria Santos (cust_abc123)
-[>>>] Checking external accounts...
-[ ->] Using account: us_bank ending in 4567
-[>>>] Creating transfer: $500.00 USD
-[ OK] Transfer created!
-{
-  "id": "txn_xyz789",
-  "status": "pending_approval",
-  "amount": 500,
-  "currency": "USD"
-}
-```
-
-Works for any operation:
+A complete command-line interface for your Blaze account.
 
 ```bash
-blaze agent "check balance"
-blaze agent "list transactions 5"
+blaze balance                    # Check account balance
+blaze transactions list          # View recent transactions
+blaze transactions list --personal  # Personal transactions
+blaze businesses list            # List your businesses
+blaze businesses use <id>        # Switch business context
 ```
 
-See [docs/agent.md](docs/agent.md) for supported commands and customization.
+| Category | Commands |
+|----------|----------|
+| **Account** | `balance`, `whoami`, `businesses`, `me` |
+| **Payments** | `send`, `contacts`, `payments` |
+| **Business** | `customers`, `transfers`, `withdrawals`, `paylinks` |
+| **Billing** | `invoices`, `subscriptions`, `bills` |
+| **Insights** | `insights summary`, `insights transactions`, `insights balances` |
+| **Operations** | `team`, `api-keys`, `webhooks`, `disputes` |
+| **FX** | `fx rates`, `fx quote` |
+
+### Context Flags
+
+```bash
+--personal      # Force personal mode (ignore active business)
+--business <id> # Use a specific business for one command
+--format json   # Raw JSON output (default: table)
+```
+
+See [docs/cli.md](docs/cli.md) for the full command reference.
 
 ---
 
 ## Authentication
 
-Three methods, in order of precedence:
+```bash
+blaze auth          # Browser login (recommended)
+blaze auth login --api-key sk_live_...  # API key (CI/headless)
+```
 
-| Priority | Method | Example |
-|----------|--------|---------|
-| 1 | `--api-key` flag | `blaze balance --api-key sk_test_...` |
-| 2 | Environment variable | `export BLAZE_API_KEY=sk_test_...` |
-| 3 | Config file | `~/.blaze/config.json` |
-
-**Test mode** — Keys starting with `sk_test_` hit the sandbox environment. No real money moves.
-
-**Live mode** — Keys starting with `sk_live_` hit the production API. Handle with care.
-
-See [docs/authentication.md](docs/authentication.md) for setup instructions.
+Your session persists across CLI and MCP — authenticate once, use everywhere.
 
 ---
 
 ## Supported Currencies
 
-| Code | Currency |
-|------|----------|
-| USD | US Dollar |
-| MXN | Mexican Peso |
-| EUR | Euro |
-| GBP | British Pound |
-| BRL | Brazilian Real |
-| COP | Colombian Peso |
-| PEN | Peruvian Sol |
-| ARS | Argentine Peso |
+USD, MXN, EUR, GBP, BRL, COP, PEN, ARS — with real-time FX rates between all pairs.
 
 ---
 
-## Error Handling
+## Documentation
 
-All errors are typed and predictable.
-
-```typescript
-import { BlazeClient, BlazeValidationError } from "@blaze-money/cli"
-
-try {
-  await client.createCustomer({ email: "invalid" })
-} catch (err) {
-  if (err instanceof BlazeValidationError) {
-    console.error(err.errors) // { email: ["Invalid email format"] }
-  }
-}
-```
-
-| Error Class | HTTP Status | When |
-|-------------|-------------|------|
-| `BlazeError` | — | Base class for all errors |
-| `BlazeAuthenticationError` | 401 | Invalid or missing API key |
-| `BlazePermissionError` | 403 | Insufficient permissions |
-| `BlazeNotFoundError` | 404 | Resource does not exist |
-| `BlazeValidationError` | 400 | Invalid request parameters |
-| `BlazeRateLimitError` | 429 | Too many requests |
+| Doc | What it covers |
+|-----|----------------|
+| [docs/cli.md](docs/cli.md) | Full CLI command reference |
+| [docs/sdk.md](docs/sdk.md) | TypeScript SDK (programmatic usage) |
+| [docs/mcp.md](docs/mcp.md) | MCP server details and tool catalog |
+| [docs/agent.md](docs/agent.md) | Natural language agent mode |
+| [docs/codex-integration.md](docs/codex-integration.md) | Business integration patterns |
+| [docs/authentication.md](docs/authentication.md) | Auth methods and API keys |
 
 ---
 
 ## Contributing
 
-We welcome contributions. Please see [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines on how to get started.
+We welcome contributions. See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
 
 ---
 
