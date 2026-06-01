@@ -146,6 +146,10 @@ export class BlazeClient {
       }
     }
 
+    if (res.status === 204 || res.headers?.get("content-length") === "0") {
+      return undefined as T
+    }
+
     const json = (await res.json()) as Record<string, unknown>
     // List responses have { object: "list", data: [...] } at top level — return as-is.
     // Single-object responses are wrapped in { data: {...} } — unwrap.

@@ -384,6 +384,19 @@ export type WebhookEvent =
   | "checkout.session.expired"
   | "refund.created"
   | "refund.updated"
+  | "charge.succeeded"
+  | "charge.failed"
+  | "charge.requires_action"
+  | "bill.created"
+  | "bill.extracted"
+  | "bill.needs.review"
+  | "bill.approved"
+  | "bill.approval.required"
+  | "bill.payment.pending.funding"
+  | "bill.payment.pending.payout"
+  | "bill.paid"
+  | "bill.payment.failed"
+  | "bill.payment.returned"
 
 export interface Webhook {
   id: string
