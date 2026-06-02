@@ -1166,4 +1166,36 @@ export function registerTools(server: McpServer, client: BlazeClient): void {
       }
     }
   )
+
+  // ============================================
+  // Duplicate Payment Detection (AI CFO Tool 6) — tools 75-76
+  // ============================================
+
+  // 75. Scan for Duplicate Payments
+  server.tool(
+    "blaze_cfo_duplicates",
+    "Scan recent payments for potential duplicates — same vendor, similar amount, close timing. Returns grouped matches with confidence scores. Use for periodic audits or when the user asks about duplicate/double payments.",
+    schemas.scanDuplicatesSchema.shape,
+    async params => {
+      try {
+        return jsonResult(await client.scanDuplicates(params))
+      } catch (err) {
+        return errorResult(err)
+      }
+    }
+  )
+
+  // 76. Pre-execution Duplicate Check
+  server.tool(
+    "blaze_cfo_check_duplicate",
+    "Check if a payment about to be made looks like a duplicate of a recent payment to the same vendor. Call BEFORE executing a transfer or bill payment to warn the user.",
+    schemas.checkDuplicateSchema.shape,
+    async params => {
+      try {
+        return jsonResult(await client.checkDuplicate(params))
+      } catch (err) {
+        return errorResult(err)
+      }
+    }
+  )
 }

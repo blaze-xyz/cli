@@ -633,3 +633,32 @@ export const listBillsActivityLogSchema = z.object({
   bill_id: z.string().optional(),
   limit: z.number().int().optional(),
 })
+
+// Duplicate Payment Detection (AI CFO Tool 6)
+export const scanDuplicatesSchema = z.object({
+  window_days: z
+    .number()
+    .int()
+    .min(1)
+    .max(90)
+    .optional()
+    .describe("Number of days to look back (default: 30, max: 90)"),
+  amount_tolerance_percent: z
+    .number()
+    .int()
+    .min(1)
+    .max(10)
+    .optional()
+    .describe("Percentage tolerance for amount matching (default: 5)"),
+  min_amount_cents: z
+    .number()
+    .int()
+    .min(100)
+    .optional()
+    .describe("Minimum payment amount in cents to consider (default: 1000)"),
+})
+
+export const checkDuplicateSchema = z.object({
+  vendor_name: z.string().describe("Vendor/recipient name for the payment"),
+  amount_cents: z.number().int().positive().describe("Payment amount in cents"),
+})

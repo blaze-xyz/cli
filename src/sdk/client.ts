@@ -68,6 +68,10 @@ import type {
   ListBankTransactionsParams,
   BankBalances,
   InsightsDateRangeParams,
+  DuplicateScanParams,
+  DuplicateScanResult,
+  DuplicateCheckParams,
+  DuplicateCheckResult,
 } from "./types"
 
 export interface BlazeClientOptions {
@@ -874,6 +878,26 @@ export class BlazeClient {
     return this.request<UserSearchResult>(
       "GET",
       `/v1/users/by-tag/${encodeURIComponent(blazetag)}`
+    )
+  }
+
+  // Duplicate Payment Detection (AI CFO Tool 6)
+  async scanDuplicates(
+    params?: DuplicateScanParams
+  ): Promise<DuplicateScanResult> {
+    return this.request<DuplicateScanResult>(
+      "GET",
+      `/v1/duplicates/scan${this.buildQuery(params)}`
+    )
+  }
+
+  async checkDuplicate(
+    data: DuplicateCheckParams
+  ): Promise<DuplicateCheckResult> {
+    return this.request<DuplicateCheckResult>(
+      "POST",
+      "/v1/duplicates/check",
+      data
     )
   }
 

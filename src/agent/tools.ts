@@ -906,6 +906,61 @@ const toolDefs: ToolDef[] = [
       return client.getGmailConnectSession(session_id)
     },
   },
+
+  // -------------------------------------------------------------------------
+  // Duplicate Payment Detection (AI CFO Tool 6)
+  // -------------------------------------------------------------------------
+  {
+    schema: {
+      name: "blaze_cfo_duplicates",
+      description:
+        "Scan recent payments for potential duplicates — same vendor, similar amount, close timing. Returns grouped matches with confidence scores. Use for periodic audits or when the user asks about duplicate/double payments.",
+      input_schema: props([], {
+        window_days: {
+          type: "number",
+          description: "Number of days to look back (default: 30, max: 90)",
+        },
+        amount_tolerance_percent: {
+          type: "number",
+          description: "Percentage tolerance for amount matching (default: 5)",
+        },
+        min_amount_cents: {
+          type: "number",
+          description:
+            "Minimum payment amount in cents to consider (default: 1000)",
+        },
+      }),
+    },
+    execute: async (input, client) => {
+      const i = input as {
+        window_days?: number
+        amount_tolerance_percent?: number
+        min_amount_cents?: number
+      }
+      return client.scanDuplicates(i)
+    },
+  },
+  {
+    schema: {
+      name: "blaze_cfo_check_duplicate",
+      description:
+        "Check if a payment about to be made looks like a duplicate of a recent payment to the same vendor. Call BEFORE executing a transfer or bill payment to warn the user about potential duplicates.",
+      input_schema: props(["vendor_name", "amount_cents"], {
+        vendor_name: {
+          type: "string",
+          description: "Vendor/recipient name for the payment",
+        },
+        amount_cents: {
+          type: "number",
+          description: "Payment amount in cents",
+        },
+      }),
+    },
+    execute: async (input, client) => {
+      const i = input as { vendor_name: string; amount_cents: number }
+      return client.checkDuplicate(i)
+    },
+  },
 ]
 
 // ---------------------------------------------------------------------------

@@ -691,3 +691,53 @@ export interface BankBalances {
   currency: string | null
   accounts_unavailable: number
 }
+
+// Duplicate Payment Detection
+export interface DuplicateScanParams {
+  window_days?: number
+  amount_tolerance_percent?: number
+  min_amount_cents?: number
+}
+
+export interface DuplicatePaymentEntry {
+  id: string
+  type: string
+  amount_cents: number
+  date: string
+  status: string
+}
+
+export interface DuplicateGroup {
+  vendor_name: string
+  confidence: number
+  reason: string
+  total_potential_overpayment_cents: number
+  payments: DuplicatePaymentEntry[]
+}
+
+export interface DuplicateScanResult {
+  data: {
+    object: "duplicate_scan_result"
+    duplicates: DuplicateGroup[]
+    count: number
+  }
+}
+
+export interface DuplicateCheckParams {
+  vendor_name: string
+  amount_cents: number
+}
+
+export interface DuplicateCheckResult {
+  data: {
+    object: "duplicate_check_result"
+    is_duplicate: boolean
+    confidence: number
+    message: string
+    existing_payments: Array<{
+      id: string
+      amount_cents: number
+      date: string
+    }>
+  }
+}

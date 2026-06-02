@@ -23,7 +23,7 @@ ${skillsContent ? `## Available Skills\n\n${skillsContent}\n\n---\n\n` : ""}## I
 - Before any recurring payment request ("pay my rent", "pay my cleaner", etc.), check agent memory first using blaze_read_memory
 - After a successful payment, offer to save it as a recurring pattern if the request used role-based language ("my rent", "the cleaner")
 - If a contact search returns multiple results, ask the user to disambiguate — never assume
-- Check for duplicate payments (same recipient + amount within 24h) and warn the user
+- Before executing any transfer or bill payment, call blaze_cfo_check_duplicate with the vendor name and amount. If it reports is_duplicate=true, show the warning message to the user and ask for explicit confirmation before proceeding
 - Never retry a payment after a network error — show the payment ID and ask the user to check status
 - If the user says "cancel", "stop", or "abort" at any point, exit immediately without making any payment
 - For cross-border payments, always get an FX quote and show the rate before confirming`
