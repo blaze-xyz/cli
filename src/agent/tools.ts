@@ -1,6 +1,7 @@
 import type Anthropic from "@anthropic-ai/sdk"
 import type { BlazeClient } from "../sdk/client"
 import type { MemoryStore } from "./memory"
+import { USD_RATES, estimateUsdAmount } from "../constants/fx-rates"
 
 type ToolInput = Record<string, unknown>
 
@@ -272,6 +273,20 @@ const toolDefs: ToolDef[] = [
         }
 
         const usdcAmountInCents = Math.round(i.amount * 100)
+
+        // Balance pre-check
+        const balance = await client.getBalance()
+        const availableCents =
+          typeof balance.available === "object"
+            ? (balance.available as { amount: number }).amount
+            : (balance.available as number)
+        if (availableCents < usdcAmountInCents) {
+          return {
+            success: false,
+            error: `Insufficient balance. You have $${(availableCents / 100).toFixed(2)} available but this requires ~$${(usdcAmountInCents / 100).toFixed(2)}.`,
+          }
+        }
+
         const result = await client.payContact(i.contact_id, bankAccountId, {
           amount: i.amount,
           currencyId,
@@ -363,6 +378,18 @@ const toolDefs: ToolDef[] = [
         currency?: string
         note?: string
       }
+
+      // Self-send validation
+      const me = (await client.getMe()) as { blazetag?: string | null }
+      const recipientTag = i.blazetag.replace(/^@/, "").toLowerCase()
+      if (me.blazetag && me.blazetag.toLowerCase() === recipientTag) {
+        return {
+          success: false,
+          error:
+            "Cannot send a payment to yourself. Please specify a different recipient.",
+        }
+      }
+
       const currency = (i.currency ?? "USD").toUpperCase()
       const needsFx = currency !== "USD" && currency !== "USDC"
 
@@ -371,16 +398,25 @@ const toolDefs: ToolDef[] = [
       let exchangeRate: number | undefined
 
       if (needsFx) {
-        const quote = await client.createFxQuote({
-          from_currency: currency,
-          to_currency: "USD",
-          amount: i.amount,
-        })
-        usdcAmountInCents = Math.round(quote.converted_amount * 100)
+        const estimatedUsd = estimateUsdAmount(i.amount, currency)
+        usdcAmountInCents = Math.round(estimatedUsd * 100)
         fiatAmountInCents = Math.round(i.amount * 100)
-        exchangeRate = quote.exchange_rate
+        exchangeRate = USD_RATES[currency] || 1
       } else {
         usdcAmountInCents = Math.round(i.amount * 100)
+      }
+
+      // Balance pre-check
+      const sendBalance = await client.getBalance()
+      const sendAvailableCents =
+        typeof sendBalance.available === "object"
+          ? (sendBalance.available as { amount: number }).amount
+          : (sendBalance.available as number)
+      if (sendAvailableCents < usdcAmountInCents) {
+        return {
+          success: false,
+          error: `Insufficient balance. You have $${(sendAvailableCents / 100).toFixed(2)} available but this requires ~$${(usdcAmountInCents / 100).toFixed(2)}.`,
+        }
       }
 
       return client.sendPayment({

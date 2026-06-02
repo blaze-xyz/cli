@@ -3,6 +3,8 @@ import { confirm, select } from "@inquirer/prompts"
 
 import { getClient, getGlobalOpts, handleError } from "../utils"
 import { formatOutput } from "../output"
+import { getAuth } from "../auth-utils"
+import { estimateUsdAmount } from "../../constants/fx-rates"
 
 export function registerSendCommand(program: Command): void {
   program
@@ -35,15 +37,11 @@ export function registerSendCommand(program: Command): void {
           let conversionNote = ""
 
           if (needsFxConversion) {
-            const quote = await client.createFxQuote({
-              from_currency: currency,
-              to_currency: "USD",
-              amount: opts.amount,
-            })
-            usdcAmountInCents = Math.round(quote.converted_amount * 100)
+            const estimatedUsd = estimateUsdAmount(opts.amount, currency)
+            usdcAmountInCents = Math.round(estimatedUsd * 100)
             fiatAmountInCents = Math.round(opts.amount * 100)
-            exchangeRate = quote.exchange_rate
-            conversionNote = ` (~$${quote.converted_amount.toFixed(2)} USD)`
+            exchangeRate = opts.amount / estimatedUsd
+            conversionNote = ` (~$${estimatedUsd.toFixed(2)} USD)`
           } else {
             usdcAmountInCents = Math.round(opts.amount * 100)
           }
@@ -97,6 +95,31 @@ export function registerSendCommand(program: Command): void {
 
           if (!targetBlazetag && !targetPublicKey) {
             console.error("Could not resolve recipient's wallet address")
+            return
+          }
+
+          // Self-send validation (use cached auth data to avoid extra API call)
+          const auth = await getAuth()
+          if (
+            auth?.user?.blazetag &&
+            targetBlazetag &&
+            auth.user.blazetag.toLowerCase() ===
+              targetBlazetag.replace(/^@/, "").toLowerCase()
+          ) {
+            console.error("Cannot send a payment to yourself")
+            return
+          }
+
+          // Balance pre-check
+          const balance = await client.getBalance()
+          const availableCents =
+            typeof balance.available === "object"
+              ? balance.available.amount
+              : balance.available
+          if (availableCents < usdcAmountInCents) {
+            console.error(
+              `Insufficient balance. You have $${(availableCents / 100).toFixed(2)} available but this requires ~$${(usdcAmountInCents / 100).toFixed(2)}.`
+            )
             return
           }
 

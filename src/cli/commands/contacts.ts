@@ -3,6 +3,7 @@ import { confirm, select } from "@inquirer/prompts"
 import { getClient, getGlobalOpts, handleError } from "../utils"
 import { formatOutput } from "../output"
 import type { Contact, ContactBankAccount } from "../../sdk/types"
+import { estimateUsdAmount } from "../../constants/fx-rates"
 
 function truncate(str: string, max: number): string {
   return str.length > max ? str.slice(0, max - 1) + "…" : str
@@ -256,12 +257,24 @@ export function registerContactsCommands(program: Command): void {
           let conversionNote = ""
           let usdcAmountInCents: number
           if (currency !== "USD" && currency !== "USDC") {
-            const approxUsdRate = estimateUsdRate(currency)
-            const estimatedUsd = opts.amount / approxUsdRate
+            const estimatedUsd = estimateUsdAmount(opts.amount, currency)
             usdcAmountInCents = Math.round(estimatedUsd * 100)
             conversionNote = ` (~$${estimatedUsd.toFixed(2)} USD from your balance)`
           } else {
             usdcAmountInCents = Math.round(opts.amount * 100)
+          }
+
+          // Balance pre-check
+          const balance = await client.getBalance()
+          const availableCents =
+            typeof balance.available === "object"
+              ? balance.available.amount
+              : balance.available
+          if (availableCents < usdcAmountInCents) {
+            console.error(
+              `Insufficient balance. You have $${(availableCents / 100).toFixed(2)} available but this requires ~$${(usdcAmountInCents / 100).toFixed(2)}.`
+            )
+            process.exit(1)
           }
 
           const minimumAmount = getMinimumTransferAmount(currency)
@@ -359,25 +372,12 @@ export function registerContactsCommands(program: Command): void {
     })
 }
 
-const USD_RATES: Record<string, number> = {
-  MXN: 17.15,
-  BRL: 5.05,
-  EUR: 0.92,
-  GBP: 0.79,
-  COP: 4200,
-  ARS: 900,
-}
-
 const BRIDGE_TRANSFER_MINIMUMS_LOCAL: Record<string, number> = {
   USD: 1,
   MXN: 50,
   BRL: 10,
   EUR: 5,
   GBP: 5,
-}
-
-function estimateUsdRate(currency: string): number {
-  return USD_RATES[currency.toUpperCase()] || 1
 }
 
 function getMinimumTransferAmount(currency: string): number {
