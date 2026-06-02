@@ -386,7 +386,7 @@ export type WebhookEvent =
   | "refund.updated"
   | "charge.succeeded"
   | "charge.failed"
-  | "charge.requires_action"
+  | "charge.requires.action"
   | "bill.created"
   | "bill.extracted"
   | "bill.needs.review"
