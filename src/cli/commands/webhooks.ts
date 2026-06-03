@@ -58,10 +58,19 @@ export function registerWebhooksCommands(program: Command): void {
               : undefined,
             description: opts.description,
           })
-          console.log("\nSigning Secret (save this — it won't be shown again):")
-          console.log(result.secret)
-          console.log("")
-          formatOutput(result, globals.format)
+          if (globals.format === "json") {
+            formatOutput(result, "json")
+          } else {
+            const r = result as unknown as Record<string, unknown>
+            const eventsList = Array.isArray(r.events)
+              ? ` Listening for: ${(r.events as string[]).join(", ")}.`
+              : ""
+            console.log(
+              `\nWebhook endpoint created for ${opts.url}.${eventsList}`
+            )
+            console.log(`Save this signing secret — it won't be shown again:\n`)
+            console.log(`  ${result.secret}\n`)
+          }
         } catch (err) {
           handleError(err)
         }
@@ -130,7 +139,7 @@ export function registerWebhooksCommands(program: Command): void {
         const globals = getGlobalOpts(program)
         const client = await getClient(globals)
         await client.deleteWebhook(id)
-        console.log(`Webhook ${id} deleted.`)
+        console.log("\nWebhook deleted.\n")
       } catch (err) {
         handleError(err)
       }

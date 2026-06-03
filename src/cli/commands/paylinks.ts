@@ -67,15 +67,11 @@ export function registerPaylinksCommands(program: Command): void {
             formatOutput(link, "json")
           } else {
             const l = link as unknown as Record<string, unknown>
-            console.log("")
-            console.log(`  Payment link created!`)
-            console.log(`  ID:     ${l.id}`)
-            if (l.url) console.log(`  URL:    ${l.url}`)
+            const currency = opts.currency || "USD"
+            const urlLine = l.url ? `\n${l.url}` : ""
             console.log(
-              `  Amount: $${(opts.amount / 100).toFixed(2)} ${opts.currency || "USD"}`
+              `\nPayment link for ${opts.amount.toFixed(2)} ${currency} created.${urlLine}\n`
             )
-            if (l.status) console.log(`  Status: ${l.status}`)
-            console.log("")
           }
         } catch (err) {
           handleError(err)
@@ -110,7 +106,7 @@ export function registerPaylinksCommands(program: Command): void {
         const globals = getGlobalOpts(program)
         const client = await getClient(globals)
         await client.cancelPaymentLink(id)
-        console.log(`Payment link ${id} cancelled.`)
+        console.log("\nPayment link cancelled.\n")
       } catch (err) {
         handleError(err)
       }

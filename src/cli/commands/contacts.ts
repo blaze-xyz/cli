@@ -168,11 +168,9 @@ export function registerContactsCommands(program: Command): void {
           if (globals.format === "json") {
             formatOutput(result, "json")
           } else {
-            console.log("")
-            console.log(`  Contact added!`)
-            console.log(`  Name:  ${opts.firstName} ${opts.lastName}`)
-            console.log(`  ID:    ${result.id}`)
-            console.log("")
+            console.log(
+              `\n${opts.firstName} ${opts.lastName} has been added to your contacts.\n`
+            )
           }
         } catch (err) {
           handleError(err)
@@ -287,7 +285,7 @@ export function registerContactsCommands(program: Command): void {
 
           const displayName = contact.first_name
             ? `${contact.first_name} ${contact.last_name || ""}`.trim()
-            : contact.business_name || contact.id
+            : contact.business_name || "your contact"
           const accountLabel = `${bankAccount.bank_name || "Bank"} (****${(bankAccount.account_number || "").slice(-4)})`
 
           if (!opts.yes) {
@@ -310,18 +308,15 @@ export function registerContactsCommands(program: Command): void {
             if (globals.format === "json") {
               formatOutput(result, "json")
             } else {
-              console.log("")
-              console.log(`  Payment submitted!`)
-              console.log(`  ${"─".repeat(40)}`)
-              console.log(`  To:           ${displayName}`)
-              console.log(`  Account:      ${accountLabel}`)
-              console.log(`  Amount:       ${opts.amount} ${currency}`)
-              if (conversionNote) {
-                console.log(`  Debited:      ${conversionNote.trim()}`)
-              }
-              console.log(`  Status:       ${result.status}`)
-              console.log(`  Transfer ID:  ${result.id}`)
-              console.log("")
+              const noteClause = opts.note
+                ? ` with the note "${opts.note}"`
+                : ""
+              const debitClause = conversionNote
+                ? ` ${conversionNote.trim()}`
+                : ""
+              console.log(
+                `\nYour payment of ${opts.amount} ${currency} to ${displayName} (${accountLabel}) has been submitted${noteClause}.${debitClause}\n`
+              )
             }
           } catch (err: unknown) {
             const error = err as {
@@ -365,7 +360,7 @@ export function registerContactsCommands(program: Command): void {
         const globals = getGlobalOpts(program)
         const client = await getClient(globals)
         await client.deleteContact(id)
-        console.log(`Contact ${id} removed.`)
+        console.log("\nContact removed.\n")
       } catch (err) {
         handleError(err)
       }

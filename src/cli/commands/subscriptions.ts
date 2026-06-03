@@ -84,7 +84,14 @@ export function registerSubscriptionsCommands(program: Command): void {
         const globals = getGlobalOpts(program)
         const client = await getClient(globals)
         const result = await client.cancelSubscription(id, opts.immediately)
-        formatOutput(result, globals.format)
+        if (globals.format === "json") {
+          formatOutput(result, "json")
+        } else {
+          const when = opts.immediately
+            ? "immediately"
+            : "at the end of the current billing period"
+          console.log(`\nSubscription cancelled ${when}.\n`)
+        }
       } catch (err) {
         handleError(err)
       }
@@ -98,7 +105,11 @@ export function registerSubscriptionsCommands(program: Command): void {
         const globals = getGlobalOpts(program)
         const client = await getClient(globals)
         const result = await client.pauseSubscription(id)
-        formatOutput(result, globals.format)
+        if (globals.format === "json") {
+          formatOutput(result, "json")
+        } else {
+          console.log("\nSubscription paused.\n")
+        }
       } catch (err) {
         handleError(err)
       }
@@ -112,7 +123,11 @@ export function registerSubscriptionsCommands(program: Command): void {
         const globals = getGlobalOpts(program)
         const client = await getClient(globals)
         const result = await client.resumeSubscription(id)
-        formatOutput(result, globals.format)
+        if (globals.format === "json") {
+          formatOutput(result, "json")
+        } else {
+          console.log("\nSubscription resumed.\n")
+        }
       } catch (err) {
         handleError(err)
       }

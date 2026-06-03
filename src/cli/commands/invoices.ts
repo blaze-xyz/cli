@@ -90,7 +90,11 @@ export function registerInvoicesCommands(program: Command): void {
         const globals = getGlobalOpts(program)
         const client = await getClient(globals)
         const result = await client.sendInvoice(id)
-        formatOutput(result, globals.format)
+        if (globals.format === "json") {
+          formatOutput(result, "json")
+        } else {
+          console.log("\nInvoice sent to customer.\n")
+        }
       } catch (err) {
         handleError(err)
       }
@@ -104,7 +108,11 @@ export function registerInvoicesCommands(program: Command): void {
         const globals = getGlobalOpts(program)
         const client = await getClient(globals)
         const result = await client.markInvoicePaid(id)
-        formatOutput(result, globals.format)
+        if (globals.format === "json") {
+          formatOutput(result, "json")
+        } else {
+          console.log("\nInvoice marked as paid.\n")
+        }
       } catch (err) {
         handleError(err)
       }
@@ -118,7 +126,11 @@ export function registerInvoicesCommands(program: Command): void {
         const globals = getGlobalOpts(program)
         const client = await getClient(globals)
         const result = await client.voidInvoice(id)
-        formatOutput(result, globals.format)
+        if (globals.format === "json") {
+          formatOutput(result, "json")
+        } else {
+          console.log("\nInvoice voided.\n")
+        }
       } catch (err) {
         handleError(err)
       }

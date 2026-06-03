@@ -146,11 +146,10 @@ export function registerSendCommand(program: Command): void {
           if (globals.format === "json") {
             formatOutput(result, "json")
           } else {
-            console.log("")
-            console.log(`  Payment sent!`)
-            console.log(`  ID:      ${result.id}`)
-            console.log(`  Status:  ${result.status}`)
-            console.log("")
+            const noteClause = opts.note ? ` with the note "${opts.note}"` : ""
+            console.log(
+              `\nYour payment of ${opts.amount} ${currency} to ${displayName} has been sent${noteClause}.\n`
+            )
           }
         } catch (err) {
           handleError(err)

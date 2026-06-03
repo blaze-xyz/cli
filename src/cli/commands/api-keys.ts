@@ -46,10 +46,23 @@ export function registerApiKeysCommands(program: Command): void {
             is_test: opts.test ?? false,
             expires_in_days: opts.expiresInDays,
           })
-          console.log("\nAPI Key (save this — it won't be shown again):")
-          console.log(result.key)
-          console.log("")
-          formatOutput(result, globals.format)
+          if (globals.format === "json") {
+            formatOutput(result, "json")
+          } else {
+            const r = result as unknown as Record<string, unknown>
+            const scopeList = Array.isArray(r.scopes)
+              ? (r.scopes as string[]).join(", ")
+              : opts.scopes
+            const expiryNote = r.expires_at
+              ? ` Expires ${new Date(r.expires_at as string).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}.`
+              : ""
+            const modeNote = opts.test ? " (test mode)" : ""
+            console.log(
+              `\nAPI key "${opts.name}"${modeNote} created with scopes: ${scopeList}.${expiryNote}`
+            )
+            console.log(`Save this — it won't be shown again:\n`)
+            console.log(`  ${result.key}\n`)
+          }
         } catch (err) {
           handleError(err)
         }
@@ -94,7 +107,7 @@ export function registerApiKeysCommands(program: Command): void {
         const globals = getGlobalOpts(program)
         const client = await getClient(globals)
         await client.revokeApiKey(id, opts.reason)
-        console.log(`API key ${id} revoked.`)
+        console.log("\nAPI key revoked.\n")
       } catch (err) {
         handleError(err)
       }

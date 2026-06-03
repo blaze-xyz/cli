@@ -65,12 +65,7 @@ export function registerCustomersCommands(program: Command): void {
           if (globals.format === "json") {
             formatOutput(customer, "json")
           } else {
-            const c = customer as unknown as Record<string, unknown>
-            console.log("")
-            console.log(`  Customer created!`)
-            console.log(`  ID:    ${c.id}`)
-            console.log(`  Email: ${opts.email}`)
-            console.log("")
+            console.log(`\nCustomer ${opts.email} has been created.\n`)
           }
         } catch (err) {
           handleError(err)
@@ -112,7 +107,7 @@ export function registerCustomersCommands(program: Command): void {
         const globals = getGlobalOpts(program)
         const client = await getClient(globals)
         await client.archiveCustomer(id)
-        console.log(`Customer ${id} archived.`)
+        console.log("\nCustomer archived.\n")
       } catch (err) {
         handleError(err)
       }

@@ -48,7 +48,11 @@ export function registerTeamCommands(program: Command): void {
           email: opts.email,
           role: opts.role as TeamRole,
         })
-        formatOutput(result, globals.format)
+        if (globals.format === "json") {
+          formatOutput(result, "json")
+        } else {
+          console.log(`\nInvitation sent to ${opts.email} as ${opts.role}.\n`)
+        }
       } catch (err) {
         handleError(err)
       }
@@ -65,7 +69,11 @@ export function registerTeamCommands(program: Command): void {
         const result = await client.updateMemberRole(id, {
           role: opts.role as TeamRole,
         })
-        formatOutput(result, globals.format)
+        if (globals.format === "json") {
+          formatOutput(result, "json")
+        } else {
+          console.log(`\nRole updated to ${opts.role}.\n`)
+        }
       } catch (err) {
         handleError(err)
       }
@@ -89,7 +97,7 @@ export function registerTeamCommands(program: Command): void {
         const globals = getGlobalOpts(program)
         const client = await getClient(globals)
         await client.removeMember(id)
-        console.log(`Team member ${id} removed.`)
+        console.log("\nTeam member removed.\n")
       } catch (err) {
         handleError(err)
       }
@@ -116,7 +124,7 @@ export function registerTeamCommands(program: Command): void {
         await client.transferOwnership({
           new_owner_id: opts.newOwnerId,
         })
-        console.log(`Ownership transferred to ${opts.newOwnerId}.`)
+        console.log("\nOwnership transferred successfully.\n")
       } catch (err) {
         handleError(err)
       }

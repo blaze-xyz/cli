@@ -41,27 +41,27 @@ export function registerTransfersCommands(program: Command): void {
 
         const t = transfer as unknown as Record<string, unknown>
         console.log("")
-        console.log(`  Transfer ${t.id}`)
+        console.log(`  Transfer Details`)
         console.log(`  ${"─".repeat(50)}`)
         console.log(`  Status:       ${t.status}`)
         console.log(
-          `  Amount:       $${((t.amount as number) / 100).toFixed(2)} ${t.currency || "USD"}`
+          `  Amount:       ${((t.amount as number) / 100).toFixed(2)} ${t.currency || "USD"}`
         )
         if (t.fee) {
           console.log(
-            `  Fee:          $${((t.fee as number) / 100).toFixed(2)}`
+            `  Fee:          ${((t.fee as number) / 100).toFixed(2)} ${t.currency || "USD"}`
           )
         }
         if (t.source) {
           const src = t.source as Record<string, unknown>
           console.log(
-            `  From:         ${((src.type as string) || "").replace(/_/g, " ")} (${src.id})`
+            `  From:         ${((src.type as string) || "").replace(/_/g, " ")}`
           )
         }
         if (t.destination) {
           const dst = t.destination as Record<string, unknown>
           console.log(
-            `  To:           ${((dst.type as string) || "").replace(/_/g, " ")} (${dst.id})`
+            `  To:           ${((dst.type as string) || "").replace(/_/g, " ")}`
           )
         }
         if (t.note) console.log(`  Note:         ${t.note}`)
@@ -116,12 +116,11 @@ export function registerTransfersCommands(program: Command): void {
           if (globals.format === "json") {
             formatOutput(transfer, "json")
           } else {
-            const t = transfer as unknown as Record<string, unknown>
-            console.log("")
-            console.log(`  Transfer created!`)
-            console.log(`  ID:      ${t.id}`)
-            console.log(`  Status:  ${t.status}`)
-            console.log("")
+            const currency = opts.currency || "USD"
+            const noteClause = opts.note ? ` with the note "${opts.note}"` : ""
+            console.log(
+              `\nTransfer of ${opts.amount.toFixed(2)} ${currency} created and is now processing${noteClause}.\n`
+            )
           }
         } catch (err) {
           handleError(err)

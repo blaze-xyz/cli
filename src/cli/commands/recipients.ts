@@ -86,7 +86,7 @@ export function registerRecipientsCommands(program: Command): void {
         const globals = getGlobalOpts(program)
         const client = await getClient(globals)
         await client.deleteExternalAccount(opts.customerId, opts.accountId)
-        console.log(`External account ${opts.accountId} removed.`)
+        console.log("\nExternal account removed.\n")
       } catch (err) {
         handleError(err)
       }

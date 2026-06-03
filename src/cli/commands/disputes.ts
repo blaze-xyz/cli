@@ -57,7 +57,11 @@ export function registerDisputesCommands(program: Command): void {
               ? opts.documentUrls.split(",").map((s: string) => s.trim())
               : undefined,
           })
-          formatOutput(result, globals.format)
+          if (globals.format === "json") {
+            formatOutput(result, "json")
+          } else {
+            console.log("\nEvidence submitted for dispute.\n")
+          }
         } catch (err) {
           handleError(err)
         }
@@ -72,7 +76,11 @@ export function registerDisputesCommands(program: Command): void {
         const globals = getGlobalOpts(program)
         const client = await getClient(globals)
         const result = await client.closeDispute(id)
-        formatOutput(result, globals.format)
+        if (globals.format === "json") {
+          formatOutput(result, "json")
+        } else {
+          console.log("\nDispute closed.\n")
+        }
       } catch (err) {
         handleError(err)
       }
