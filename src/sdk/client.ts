@@ -916,4 +916,93 @@ export class BlazeClient {
   async getPayment(id: string): Promise<unknown> {
     return this.request<unknown>("GET", `/v1/payments/${id}`)
   }
+
+  // Accounting integrations
+  async connectAccounting(
+    provider: string
+  ): Promise<{ session_id: string; auth_url: string }> {
+    return this.request<{ session_id: string; auth_url: string }>(
+      "POST",
+      "/v1/accounting/connect",
+      {
+        provider:
+          provider.toUpperCase() === "QUICKBOOKS"
+            ? "QUICKBOOKS_ONLINE"
+            : "XERO",
+      }
+    )
+  }
+
+  async getAccountingSession(
+    sessionId: string
+  ): Promise<{ status: string; error?: string }> {
+    return this.request<{ status: string; error?: string }>(
+      "GET",
+      `/v1/accounting/sessions/${sessionId}`
+    )
+  }
+
+  async getAccountingIntegrations(): Promise<any[]> {
+    return this.request<any[]>("GET", "/v1/accounting/integrations")
+  }
+
+  async disconnectAccounting(integrationId: string): Promise<void> {
+    await this.request("DELETE", `/v1/accounting/integrations/${integrationId}`)
+  }
+
+  async getProfitAndLoss(params: {
+    start_date: string
+    end_date: string
+    provider?: string
+  }): Promise<any> {
+    return this.request(
+      "GET",
+      `/v1/accounting/profit-and-loss${this.buildQuery(params)}`
+    )
+  }
+
+  async getBalanceSheet(params: {
+    as_of?: string
+    provider?: string
+  }): Promise<any> {
+    return this.request(
+      "GET",
+      `/v1/accounting/balance-sheet${this.buildQuery(params)}`
+    )
+  }
+
+  async getChartOfAccounts(params?: { provider?: string }): Promise<any> {
+    return this.request(
+      "GET",
+      `/v1/accounting/chart-of-accounts${this.buildQuery(params ?? {})}`
+    )
+  }
+
+  async createJournalEntry(entry: {
+    date: string
+    memo?: string
+    idempotency_key?: string
+    lines: {
+      accountId: string
+      amount: string
+      type: string
+      description?: string
+    }[]
+  }): Promise<{ id: string }> {
+    return this.request<{ id: string }>(
+      "POST",
+      "/v1/accounting/journal-entries",
+      {
+        date: entry.date,
+        memo: entry.memo,
+        idempotency_key: entry.idempotency_key,
+        lines: entry.lines.map(l => ({
+          account_id: l.accountId,
+          amount: l.amount,
+          type: l.type,
+          description: l.description,
+        })),
+      }
+    )
+  }
 }

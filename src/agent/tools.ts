@@ -997,6 +997,163 @@ const toolDefs: ToolDef[] = [
       return client.checkDuplicate(i)
     },
   },
+
+  // -------------------------------------------------------------------------
+  // Accounting (QuickBooks / Xero integration)
+  // -------------------------------------------------------------------------
+  {
+    schema: {
+      name: "blaze_get_profit_and_loss",
+      description:
+        "Get a Profit & Loss (income statement) report from the connected accounting system (QuickBooks or Xero). Shows revenue, expenses, and net income for a date range.",
+      input_schema: props(["start_date", "end_date"], {
+        start_date: {
+          type: "string",
+          description: "Start date (ISO 8601, e.g. 2026-01-01)",
+        },
+        end_date: {
+          type: "string",
+          description: "End date (ISO 8601, e.g. 2026-06-30)",
+        },
+        provider: {
+          type: "string",
+          description:
+            "Provider (quickbooks or xero). Omit if only one is connected.",
+        },
+      }),
+    },
+    execute: async (input, client) => {
+      const i = input as {
+        start_date: string
+        end_date: string
+        provider?: string
+      }
+      return client.getProfitAndLoss(i)
+    },
+  },
+  {
+    schema: {
+      name: "blaze_get_balance_sheet",
+      description:
+        "Get a Balance Sheet report showing assets, liabilities, and equity as of a specific date.",
+      input_schema: props([], {
+        as_of: {
+          type: "string",
+          description: "Report date (ISO 8601). Defaults to today.",
+        },
+        provider: {
+          type: "string",
+          description:
+            "Provider (quickbooks or xero). Omit if only one is connected.",
+        },
+      }),
+    },
+    execute: async (input, client) => {
+      const i = input as { as_of?: string; provider?: string }
+      return client.getBalanceSheet(i)
+    },
+  },
+  {
+    schema: {
+      name: "blaze_get_chart_of_accounts",
+      description:
+        "List all accounts from the connected accounting system (revenue, expense, asset, liability, equity accounts). Useful for finding account IDs before creating journal entries.",
+      input_schema: props([], {
+        provider: {
+          type: "string",
+          description:
+            "Provider (quickbooks or xero). Omit if only one is connected.",
+        },
+      }),
+    },
+    execute: async (input, client) => {
+      const i = input as { provider?: string }
+      return client.getChartOfAccounts(i)
+    },
+  },
+  {
+    schema: {
+      name: "blaze_sync_transaction_to_accounting",
+      description:
+        "IRREVOCABLE — Push a journal entry to the connected accounting system (QuickBooks/Xero). This creates a real entry in the customer's books. ALWAYS show the full entry details (accounts, amounts, debit/credit) to the user and get explicit confirmation before calling this tool. Requires account IDs from blaze_get_chart_of_accounts.",
+      input_schema: props(["date", "lines", "confirm"], {
+        date: { type: "string", description: "Journal entry date (ISO 8601)" },
+        memo: { type: "string", description: "Description/memo for the entry" },
+        lines: {
+          type: "array",
+          description:
+            "Array of debit/credit lines. Total debits MUST equal total credits.",
+          items: {
+            type: "object",
+            properties: {
+              account_id: { type: "string" },
+              amount: {
+                type: "string",
+                description: 'Amount as string for precision (e.g. "150.00")',
+              },
+              type: { type: "string", enum: ["debit", "credit"] },
+              description: { type: "string" },
+            },
+            required: ["account_id", "amount", "type"],
+          },
+        },
+        idempotency_key: {
+          type: "string",
+          description:
+            "Unique key to prevent duplicates on retry (UUID recommended)",
+        },
+        provider: {
+          type: "string",
+          description: "Provider (quickbooks or xero)",
+        },
+        confirm: {
+          type: "boolean",
+          description:
+            "Must be true. Set only after showing entry details to user and receiving explicit confirmation.",
+        },
+      }),
+    },
+    execute: async (input, client) => {
+      const i = input as {
+        date: string
+        memo?: string
+        lines: any[]
+        idempotency_key?: string
+        provider?: string
+        confirm?: boolean
+      }
+      if (!i.confirm) {
+        return {
+          success: false,
+          error:
+            "You must show the journal entry details to the user and get confirmation before calling this tool. Set confirm=true only after user confirms.",
+        }
+      }
+      const totalDebits = i.lines
+        .filter(l => l.type === "debit")
+        .reduce((sum, l) => sum + parseFloat(l.amount), 0)
+      const totalCredits = i.lines
+        .filter(l => l.type === "credit")
+        .reduce((sum, l) => sum + parseFloat(l.amount), 0)
+      if (Math.abs(totalDebits - totalCredits) > 0.01) {
+        return {
+          success: false,
+          error: `Journal entry must balance. Debits: ${totalDebits}, Credits: ${totalCredits}`,
+        }
+      }
+      return client.createJournalEntry({
+        date: i.date,
+        memo: i.memo,
+        idempotency_key: i.idempotency_key,
+        lines: i.lines.map(l => ({
+          accountId: l.account_id,
+          amount: l.amount,
+          type: l.type,
+          description: l.description,
+        })),
+      })
+    },
+  },
 ]
 
 // ---------------------------------------------------------------------------
