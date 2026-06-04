@@ -72,6 +72,7 @@ import type {
   DuplicateScanResult,
   DuplicateCheckParams,
   DuplicateCheckResult,
+  CashFlowForecast,
 } from "./types"
 
 export interface BlazeClientOptions {
@@ -898,6 +899,17 @@ export class BlazeClient {
       "POST",
       "/v1/duplicates/check",
       data
+    )
+  }
+
+  // Cash Flow Forecast (AI CFO Tool 1)
+  async getCashFlowForecast(params: {
+    horizon_days?: number
+  }): Promise<CashFlowForecast> {
+    return this.request<CashFlowForecast>(
+      "POST",
+      "/v1/cfo/cash-flow-forecast",
+      { horizon_days: params.horizon_days ?? 90 }
     )
   }
 

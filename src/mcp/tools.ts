@@ -1198,4 +1198,22 @@ export function registerTools(server: McpServer, client: BlazeClient): void {
       }
     }
   )
+
+  // ============================================
+  // Cash Flow Forecast (AI CFO Tool 1) — tool 77
+  // ============================================
+
+  // 77. Cash Flow Forecast
+  server.tool(
+    "blaze_cfo_forecast",
+    "Project the business's cash flow forward day-by-day from current bank balance, detected recurring inflows/outflows, and upcoming invoices/bills. Returns daily projected balances, a cash-crunch date (if any), net monthly burn rate, and runway in months. Amounts are in integer minor units (cents). Use when the user asks about runway, burn rate, when they'll run out of cash, or a cash flow forecast.",
+    schemas.cashFlowForecastSchema.shape,
+    async params => {
+      try {
+        return jsonResult(await client.getCashFlowForecast(params))
+      } catch (err) {
+        return errorResult(err)
+      }
+    }
+  )
 }

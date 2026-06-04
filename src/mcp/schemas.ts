@@ -662,3 +662,14 @@ export const checkDuplicateSchema = z.object({
   vendor_name: z.string().describe("Vendor/recipient name for the payment"),
   amount_cents: z.number().int().positive().describe("Payment amount in cents"),
 })
+
+// Cash Flow Forecast (AI CFO Tool 1)
+export const cashFlowForecastSchema = z.object({
+  horizon_days: z
+    .number()
+    .int()
+    .min(1)
+    .max(365)
+    .optional()
+    .describe("Number of days to project forward (default: 90)"),
+})

@@ -741,3 +741,37 @@ export interface DuplicateCheckResult {
     }>
   }
 }
+
+// Cash Flow Forecast (AI CFO Tool 1)
+export interface CashFlowDailyProjection {
+  date: string
+  projectedBalanceMinorUnits: number
+  confidence: number
+  inflows: number
+  outflows: number
+}
+
+export interface CashFlowRecurringItem {
+  source: string
+  amountInMinorUnits: number
+  frequency: "weekly" | "biweekly" | "monthly" | "quarterly"
+  nextExpectedDate: string
+  confidence: number
+  isInflow: boolean
+  sourceType:
+    | "plaid_recurring"
+    | "invoice_due"
+    | "bill_due"
+    | "scheduled_payment"
+}
+
+export interface CashFlowForecast {
+  dailyProjections: CashFlowDailyProjection[]
+  cashCrunchDate: string | null
+  recurringInflows: CashFlowRecurringItem[]
+  recurringOutflows: CashFlowRecurringItem[]
+  netBurnRateMonthlyMinorUnits: number
+  runwayMonths: number | null
+  currentBalanceMinorUnits: number
+  currency: string
+}

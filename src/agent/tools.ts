@@ -999,6 +999,27 @@ const toolDefs: ToolDef[] = [
   },
 
   // -------------------------------------------------------------------------
+  // Cash Flow Forecast (AI CFO Tool 1)
+  // -------------------------------------------------------------------------
+  {
+    schema: {
+      name: "blaze_cfo_forecast",
+      description:
+        'Project cash flow and runway from recurring Plaid bank activity plus upcoming invoices and bills. READ-ONLY. Use to answer "what\'s my runway / cash flow forecast / when do I run out of cash".',
+      input_schema: props([], {
+        horizon_days: {
+          type: "number",
+          description: "Number of days to project forward (default: 90)",
+        },
+      }),
+    },
+    execute: async (input, client) => {
+      const i = input as { horizon_days?: number }
+      return client.getCashFlowForecast({ horizon_days: i.horizon_days ?? 90 })
+    },
+  },
+
+  // -------------------------------------------------------------------------
   // Accounting (QuickBooks / Xero integration)
   // -------------------------------------------------------------------------
   {
