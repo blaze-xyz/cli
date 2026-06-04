@@ -7,6 +7,7 @@ import {
   getGlobalOpts,
   handleError,
   requireBusinessContext,
+  withSpinner,
 } from "../utils"
 
 // ============================================
@@ -250,15 +251,20 @@ export function registerBillsCommands(program: Command): void {
           const globals = getGlobalOpts(program)
           await requireBusinessContext(globals)
           const client = await getClient(globals)
-          const result = await client.graphqlRequest<{
-            businessBills: { nodes: unknown[]; pageInfo: unknown }
-          }>(LIST_BILLS_QUERY, {
-            status: opts.status,
-            vendorId: opts.vendorId,
-            dueBefore: opts.dueBefore,
-            limit: opts.limit,
-            cursor: opts.cursor,
-          })
+          const result = await withSpinner(
+            "Loading bills…",
+            () =>
+              client.graphqlRequest<{
+                businessBills: { nodes: unknown[]; pageInfo: unknown }
+              }>(LIST_BILLS_QUERY, {
+                status: opts.status,
+                vendorId: opts.vendorId,
+                dueBefore: opts.dueBefore,
+                limit: opts.limit,
+                cursor: opts.cursor,
+              }),
+            { format: globals.format }
+          )
           formatOutput(result.businessBills.nodes, globals.format)
         } catch (err) {
           handleError(err)
@@ -277,9 +283,13 @@ export function registerBillsCommands(program: Command): void {
         const globals = getGlobalOpts(program)
         await requireBusinessContext(globals)
         const client = await getClient(globals)
-        const result = await client.graphqlRequest<{ businessBill: unknown }>(
-          GET_BILL_QUERY,
-          { id }
+        const result = await withSpinner(
+          `Loading bill ${id}…`,
+          () =>
+            client.graphqlRequest<{ businessBill: unknown }>(GET_BILL_QUERY, {
+              id,
+            }),
+          { format: globals.format }
         )
         formatOutput(result.businessBill, globals.format)
       } catch (err) {
@@ -352,33 +362,43 @@ export function registerBillsCommands(program: Command): void {
           await requireBusinessContext(globals)
           const client = await getClient(globals)
 
-          // 1. Get quote
-          const quoteRes = await client.graphqlRequest<{
-            quoteBusinessBillPayment: {
-              id: string
-              leg1Provider: string | null
-              leg1FeeInMinorUnits: number
-              leg2Provider: string
-              leg2FeeInMinorUnits: number
-              totalFeeInMinorUnits: number
-              etaBusinessDays: number
-            }
-          }>(QUOTE_BILL_MUTATION, {
-            input: {
-              billId: id,
-              sourceFundingAccountId: opts.from,
-              expediteOption: opts.expedite,
-            },
-          })
+          // 1. Get quote (spinner stopped before prompt below)
+          const quoteRes = await withSpinner(
+            "Fetching quote…",
+            () =>
+              client.graphqlRequest<{
+                quoteBusinessBillPayment: {
+                  id: string
+                  leg1Provider: string | null
+                  leg1FeeInMinorUnits: number
+                  leg2Provider: string
+                  leg2FeeInMinorUnits: number
+                  totalFeeInMinorUnits: number
+                  etaBusinessDays: number
+                }
+              }>(QUOTE_BILL_MUTATION, {
+                input: {
+                  billId: id,
+                  sourceFundingAccountId: opts.from,
+                  expediteOption: opts.expedite,
+                },
+              }),
+            { format: globals.format }
+          )
           const quote = quoteRes.quoteBusinessBillPayment
 
-          const bill = await client.graphqlRequest<{
-            businessBill: {
-              amountInMinorUnits: number
-              currencyCode: string
-              vendor: { name: string }
-            } | null
-          }>(GET_BILL_QUERY, { id })
+          const bill = await withSpinner(
+            `Loading bill ${id}…`,
+            () =>
+              client.graphqlRequest<{
+                businessBill: {
+                  amountInMinorUnits: number
+                  currencyCode: string
+                  vendor: { name: string }
+                } | null
+              }>(GET_BILL_QUERY, { id }),
+            { format: globals.format }
+          )
           if (!bill.businessBill) {
             console.error("Bill not found")
             process.exit(1)
@@ -402,6 +422,7 @@ export function registerBillsCommands(program: Command): void {
           )
 
           if (!opts.yes) {
+            // No spinner is active here — inquirer prompt renders cleanly.
             const ok = await confirm({
               message: `Confirm payment?`,
               default: false,
@@ -412,11 +433,17 @@ export function registerBillsCommands(program: Command): void {
             }
           }
 
-          const result = await client.graphqlRequest<{
-            payBusinessBill: unknown
-          }>(PAY_BILL_MUTATION, {
-            input: { billId: id, quoteId: quote.id, confirm: true },
-          })
+          // Fresh spinner for the second leg.
+          const result = await withSpinner(
+            "Submitting payment…",
+            () =>
+              client.graphqlRequest<{
+                payBusinessBill: unknown
+              }>(PAY_BILL_MUTATION, {
+                input: { billId: id, quoteId: quote.id, confirm: true },
+              }),
+            { format: globals.format }
+          )
           formatOutput(result.payBusinessBill, globals.format)
         } catch (err) {
           handleError(err)
@@ -438,9 +465,14 @@ export function registerBillsCommands(program: Command): void {
         const globals = getGlobalOpts(program)
         await requireBusinessContext(globals)
         const client = await getClient(globals)
-        const result = await client.graphqlRequest<{
-          businessBillPendingApprovals: unknown[]
-        }>(PENDING_APPROVALS_QUERY)
+        const result = await withSpinner(
+          "Loading pending approvals…",
+          () =>
+            client.graphqlRequest<{
+              businessBillPendingApprovals: unknown[]
+            }>(PENDING_APPROVALS_QUERY),
+          { format: globals.format }
+        )
         formatOutput(result.businessBillPendingApprovals, globals.format)
       } catch (err) {
         handleError(err)
@@ -495,13 +527,18 @@ export function registerBillsCommands(program: Command): void {
           const globals = getGlobalOpts(program)
           await requireBusinessContext(globals)
           const client = await getClient(globals)
-          const result = await client.graphqlRequest<{
-            businessActivityLog: unknown[]
-          }>(ACTIVITY_LOG_QUERY, {
-            category: opts.category,
-            resourceId: opts.bill,
-            limit: opts.limit,
-          })
+          const result = await withSpinner(
+            "Loading activity logs…",
+            () =>
+              client.graphqlRequest<{
+                businessActivityLog: unknown[]
+              }>(ACTIVITY_LOG_QUERY, {
+                category: opts.category,
+                resourceId: opts.bill,
+                limit: opts.limit,
+              }),
+            { format: globals.format }
+          )
           formatOutput(result.businessActivityLog, globals.format)
         } catch (err) {
           handleError(err)
@@ -522,9 +559,14 @@ export function registerBillsCommands(program: Command): void {
         const globals = getGlobalOpts(program)
         await requireBusinessContext(globals)
         const client = await getClient(globals)
-        const result = await client.graphqlRequest<{
-          businessVendors: unknown[]
-        }>(LIST_VENDORS_QUERY, { limit: opts.limit })
+        const result = await withSpinner(
+          "Loading vendors…",
+          () =>
+            client.graphqlRequest<{
+              businessVendors: unknown[]
+            }>(LIST_VENDORS_QUERY, { limit: opts.limit }),
+          { format: globals.format }
+        )
         formatOutput(result.businessVendors, globals.format)
       } catch (err) {
         handleError(err)
@@ -621,9 +663,14 @@ export function registerBillsCommands(program: Command): void {
         const globals = getGlobalOpts(program)
         await requireBusinessContext(globals)
         const client = await getClient(globals)
-        const result = await client.graphqlRequest<{
-          businessGmailIntegrations: unknown[]
-        }>(LIST_GMAIL_INTEGRATIONS_QUERY)
+        const result = await withSpinner(
+          "Loading Gmail integrations…",
+          () =>
+            client.graphqlRequest<{
+              businessGmailIntegrations: unknown[]
+            }>(LIST_GMAIL_INTEGRATIONS_QUERY),
+          { format: globals.format }
+        )
         formatOutput(result.businessGmailIntegrations, globals.format)
       } catch (err) {
         handleError(err)

@@ -1,5 +1,5 @@
 import { Command } from "commander"
-import { getClient, getGlobalOpts, handleError } from "../utils"
+import { getClient, getGlobalOpts, handleError, withSpinner } from "../utils"
 import { formatOutput } from "../output"
 
 export function registerMeCommands(program: Command): void {
@@ -11,7 +11,11 @@ export function registerMeCommands(program: Command): void {
       try {
         const globals = getGlobalOpts(program)
         const client = await getClient({ ...globals, personal: true })
-        const profile = await client.getMe()
+        const profile = await withSpinner(
+          "Loading profile…",
+          () => client.getMe(),
+          { format: globals.format }
+        )
 
         if (globals.format === "json") {
           formatOutput(profile, "json")

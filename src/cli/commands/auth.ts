@@ -4,8 +4,6 @@ import { resolveBaseUrl, saveConfig, detectEnvironment } from "../../sdk/config"
 import { getClient, getConfig, handleError, writeConfig } from "../utils"
 import { getAuth, clearAuth, saveAuth, requireAuth } from "../auth-utils"
 
-const API_ENDPOINT = process.env.BLAZE_API_URL || "https://api.blaze.money"
-
 interface DeviceCodeResponse {
   device_code: string
   user_code: string
@@ -38,6 +36,8 @@ async function browserLogin(): Promise<void> {
   const chalk = (await import("chalk")).default
   const ora = (await import("ora")).default
   const open = (await import("open")).default
+
+  const API_ENDPOINT = resolveBaseUrl()
 
   // Check if already authenticated
   const existingAuth = await getAuth()

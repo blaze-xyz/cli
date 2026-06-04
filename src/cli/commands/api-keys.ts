@@ -1,6 +1,6 @@
 import { Command } from "commander"
 import { confirm } from "@inquirer/prompts"
-import { getClient, getGlobalOpts, handleError } from "../utils"
+import { getClient, getGlobalOpts, handleError, withSpinner } from "../utils"
 import { formatOutput } from "../output"
 import type { ApiKeyScope } from "../../sdk/types"
 
@@ -14,7 +14,11 @@ export function registerApiKeysCommands(program: Command): void {
       try {
         const globals = getGlobalOpts(program)
         const client = await getClient(globals)
-        const result = await client.listApiKeys()
+        const result = await withSpinner(
+          "Loading API keys…",
+          () => client.listApiKeys(),
+          { format: globals.format }
+        )
         formatOutput(result.data, globals.format)
       } catch (err) {
         handleError(err)

@@ -1,5 +1,5 @@
 import { Command } from "commander"
-import { getClient, getGlobalOpts, handleError } from "../utils"
+import { getClient, getGlobalOpts, handleError, withSpinner } from "../utils"
 import { formatOutput } from "../output"
 import type { Currency } from "../../sdk/types"
 
@@ -16,9 +16,14 @@ export function registerWithdrawalsCommands(program: Command): void {
       try {
         const globals = getGlobalOpts(program)
         const client = await getClient(globals)
-        const result = await client.listWithdrawals({
-          limit: opts.limit,
-        })
+        const result = await withSpinner(
+          "Loading withdrawals…",
+          () =>
+            client.listWithdrawals({
+              limit: opts.limit,
+            }),
+          { format: globals.format }
+        )
         formatOutput(result.data, globals.format)
       } catch (err) {
         handleError(err)
@@ -32,7 +37,11 @@ export function registerWithdrawalsCommands(program: Command): void {
       try {
         const globals = getGlobalOpts(program)
         const client = await getClient(globals)
-        const withdrawal = await client.getWithdrawal(id)
+        const withdrawal = await withSpinner(
+          `Loading withdrawal ${id}…`,
+          () => client.getWithdrawal(id),
+          { format: globals.format }
+        )
         formatOutput(withdrawal, globals.format)
       } catch (err) {
         handleError(err)

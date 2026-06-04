@@ -1,5 +1,5 @@
 import { Command } from "commander"
-import { getClient, getGlobalOpts, handleError } from "../utils"
+import { getClient, getGlobalOpts, handleError, withSpinner } from "../utils"
 import { formatOutput } from "../output"
 
 export function registerDisputesCommands(program: Command): void {
@@ -14,10 +14,15 @@ export function registerDisputesCommands(program: Command): void {
       try {
         const globals = getGlobalOpts(program)
         const client = await getClient(globals)
-        const result = await client.listDisputes({
-          limit: opts.limit,
-          status: opts.status,
-        })
+        const result = await withSpinner(
+          "Loading disputes…",
+          () =>
+            client.listDisputes({
+              limit: opts.limit,
+              status: opts.status,
+            }),
+          { format: globals.format }
+        )
         formatOutput(result.data, globals.format)
       } catch (err) {
         handleError(err)
@@ -31,7 +36,11 @@ export function registerDisputesCommands(program: Command): void {
       try {
         const globals = getGlobalOpts(program)
         const client = await getClient(globals)
-        const result = await client.getDispute(id)
+        const result = await withSpinner(
+          `Loading dispute ${id}…`,
+          () => client.getDispute(id),
+          { format: globals.format }
+        )
         formatOutput(result, globals.format)
       } catch (err) {
         handleError(err)

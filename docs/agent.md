@@ -1,221 +1,171 @@
 # Agent Mode
 
-Agent mode lets you interact with Blaze using natural language commands from your terminal. Instead of remembering exact CLI flags, describe what you want to do in plain English.
+Agent mode lets you interact with Blaze using natural language from the terminal. The agent is a Claude (Anthropic) tool-calling loop wrapped around the CLI's SDK — you describe what you want, the agent picks the right tools, and it surfaces confirmation prompts before any money moves.
 
 ```bash
-blaze agent "send $500 to john@example.com"
+blaze agent "How much cash do we have?"
+blaze agent "Send $50 to @alex with note 'lunch'"
+blaze agent "Pay the AWS bill"
 ```
+
+## Setup
+
+The agent calls Claude under the hood, so `ANTHROPIC_API_KEY` must be set in the shell environment in addition to the standard Blaze auth.
+
+```bash
+export ANTHROPIC_API_KEY="sk-ant-..."
+blaze auth                            # or `blaze setup` for a guided onboarding
+blaze agent "balance"
+```
+
+To install via Claude Code / Cursor / Codex as an MCP server, see [mcp.md](./mcp.md). To bundle the agent's natural-language behavior into Claude Code as a skill, see [`skills/blaze/SKILL.md`](../skills/blaze/SKILL.md).
+
+---
 
 ## How It Works
 
-The agent processes your command through three stages:
+The agent is **not** a regex parser — it is a multi-turn Claude tool-use loop driven by a Blaze-specific system prompt and a curated tool registry.
 
-1. **Parser** -- Your natural language input is matched against a set of regex patterns to extract structured data (amount, currency, email, note, etc.).
-2. **Intent** -- The parsed data is converted into a typed intent object (`send_money`, `check_balance`, or `list_transactions`).
-3. **Orchestrator** -- The intent is executed as a multi-step workflow using the Blaze SDK. Each step is logged to the terminal so you can follow the progress.
+1. **System prompt** loads a strict set of behavioral rules: read-only by default, confirm before moving money, check memory for recurring patterns, never claim a payment succeeded unless the tool actually returned success. Custom `agents/skills/*` files are also injected if present.
+2. **Tool loop** — Claude is given a curated set of read and write tools mirroring the CLI surface: balance, customers, transfers, payment links, FX quotes, bills (with quote-then-confirm), bank insights, P2P send, contacts, payments, and a persistent memory store.
+3. **Confirmation gate** — for any money-movement tool, the agent surfaces what it intends to do (recipient + amount + fees) and waits for an explicit "yes" before invoking the tool.
 
-If no pattern matches the input, the agent reports that it could not understand the command.
+If the API key in use lacks a required scope, the server (not the agent) rejects the call — so a read-only key physically cannot move money even if the model tries.
 
 ---
 
-## Supported Commands
+## Capabilities
 
-### Send Money
+These are the tools registered in [`src/agent/tools.ts`](../src/agent/tools.ts) — the agent will use them based on the question it receives.
 
-Send a payment to someone by email. The agent handles customer lookup/creation and transfer creation automatically.
+### Read & answer (no scope risk)
 
-**Patterns:**
+| You ask | Tools called |
+|---|---|
+| "What's my balance?" | `blaze_get_balance`, `blaze_get_business_balance` |
+| "How much cash do we have?" | `blaze_get_bank_balances` (live Plaid balances) |
+| "What did we spend on software last month?" | `blaze_get_spending_summary` |
+| "List bank transactions for last week" | `blaze_list_bank_transactions` |
+| "Show me my last 5 transfers" | `blaze_list_transactions`, `blaze_list_transfers` |
+| "List my recent payments" | `blaze_list_payments`, `blaze_get_payment` |
+| "Find my contact 'Alex'" | `blaze_list_contacts` |
+| "Search for blazetag @alex" | `blaze_search_users` |
+| "What's the USD→MXN rate right now?" | `blaze_fx_rates`, `blaze_fx_quote` |
+| "List my unpaid bills" | `blaze_list_bills`, `blaze_get_bill` |
+| "Show pending bill approvals" | `blaze_list_pending_bill_approvals` |
+| "What's my blazetag?" | `blaze_get_me` |
 
-```
-send $500 to john@example.com
-send 500 USD to john@example.com
-send $500 USD to john@example.com
-pay $500 to John Doe at john@example.com
-transfer $500 to john@example.com note "invoice 123"
-send 1000 MXN to john@example.com
-```
+### Write (gated by confirmation + API-key scope)
 
-**Accepted syntax:**
+| You ask | Tools called |
+|---|---|
+| "Send $50 to @alex" | `blaze_send_payment` |
+| "Pay Acme Supplies $250" | `blaze_pay_contact` |
+| "Add a new bank contact" | `blaze_add_contact` (then `blaze_delete_contact` to remove) |
+| "Create a payment link for $100" | `blaze_create_payment_link` |
+| "Add a customer with email …" | `blaze_create_customer` |
+| "Pay the AWS bill" | `blaze_quote_bill_payment` → user confirms → `blaze_pay_bill` with `confirm: true` |
+| "Connect my Gmail for bill extraction" | `blaze_connect_gmail_start` → user opens URL → `blaze_connect_gmail_finalize` polls |
 
-| Element | Format | Required |
-|---------|--------|----------|
-| Verb | `send`, `pay`, or `transfer` | Yes |
-| Amount | `$500`, `500`, `1,000.50` | Yes |
-| Currency | Three-letter code (e.g. `USD`, `MXN`) | No (defaults to `USD`) |
-| Recipient email | Any valid email address | Yes |
-| Recipient name | Free text before `at <email>` | No |
-| Note | `note "your text here"` | No |
+### Memory (persistent state)
 
-**Examples:**
+The agent has a small persistent memory at `~/.blaze/agent-memory.md`, used for recurring-payment patterns and recent-payment deduplication.
+
+| Tool | Purpose |
+|---|---|
+| `blaze_read_memory` | Read patterns + recent payment log |
+| `blaze_save_pattern` | Save a trigger phrase like `"pay my rent"` with the recipient + amount |
+| `blaze_log_payment` | Automatically appended after every completed payment |
+
+You can inspect or clear memory from outside the agent via the [`memory` CLI commands](./cli.md#memory).
+
+---
+
+## Safety rules
+
+The system prompt enforces:
+
+- Check balance before any send/payment
+- Confirm with the user before executing any money-moving tool, showing recipient + amount
+- Check memory before recurring-language requests ("pay my rent") to avoid duplicates
+- After a successful payment, offer to save it as a pattern if the request used role-based language ("my rent", "the cleaner")
+- Disambiguate when a search returns multiple results — never assume
+- Warn on duplicate payments (same recipient + amount within 24h)
+- Never retry after a network error — surface the payment ID and let the user check
+- Honor "cancel" / "stop" / "abort" at any point — exit without making the payment
+- For cross-border payments, always fetch an FX quote and show the rate before confirming
+
+The model can't override these rules, but the ultimate guarantee is server-side scope enforcement: a key without `PAYOUTS_WRITE` will be rejected at the API regardless of what the model intends to do.
+
+---
+
+## Examples
+
+### Read account state
 
 ```bash
-# Basic send
-blaze agent "send $500 to john@example.com"
-
-# With currency
-blaze agent "send 1000 MXN to john@example.com"
-
-# With recipient name
-blaze agent "pay $500 to John Doe at john@example.com"
-
-# With note
-blaze agent 'transfer $500 to john@example.com note "invoice 123"'
+blaze agent "How much cash do we have?"
+blaze agent "What did we spend on software in April?"
+blaze agent "Show me my recent contacts"
+blaze agent "List my unpaid bills"
 ```
 
-### Check Balance
-
-View your current account balance.
-
-**Patterns:**
-
-```
-check balance
-balance
-```
-
-**Example:**
+### Send money
 
 ```bash
-blaze agent "check balance"
+blaze agent "Send \$50 to @alex with note 'lunch'"
+blaze agent "Pay Acme Supplies \$250"
+blaze agent "Send 1500 MXN to Maria"           # triggers an FX quote first
 ```
 
-### List Transactions
+The agent will:
+1. Look up the recipient (and disambiguate if multiple match)
+2. For cross-border: fetch an FX quote and show the rate
+3. Ask "Send $X USD to Y?" — wait for `yes`
+4. Call the payment tool
+5. Log to agent memory
 
-View recent transactions.
-
-**Patterns:**
-
-```
-list transactions
-show transactions
-list transactions 5
-show transactions 20
-```
-
-The optional number at the end sets the limit (default is 10).
-
-**Examples:**
+### Pay a bill (two-phase)
 
 ```bash
-blaze agent "list transactions"
-blaze agent "show transactions 5"
+blaze agent "Pay the AWS bill"
 ```
+
+The agent will:
+1. List bills, find the AWS one
+2. Call `blaze_quote_bill_payment` — print amount, fees, ETA
+3. Wait for explicit `yes`
+4. Call `blaze_pay_bill` with the fresh `quote_id` and `confirm: true`
+
+If the bill is over a policy threshold (server-side `BillsPolicyEngine`), the agent will report that the payment needs human approval out-of-band — it cannot bypass.
+
+### Recurring patterns
+
+```bash
+# First time — agent pays, then offers to save as a pattern
+blaze agent "Pay my landlord \$2000 for rent"
+
+# Next time — agent recalls the pattern and asks to confirm
+blaze agent "Pay my rent"
+```
+
+Patterns live in `~/.blaze/agent-memory.md`. Manage them with `blaze memory`.
 
 ---
 
-## Send Money Flow Walkthrough
+## Comparison with CLI commands
 
-When you run `blaze agent "send $500 to john@example.com"`, the orchestrator executes these steps:
+Agent mode is a convenience layer over the direct CLI surface. Roughly equivalent invocations:
 
-**Step 1: Customer Lookup**
+| Agent | Direct CLI |
+|---|---|
+| `agent "balance"` | `balance` |
+| `agent "how much cash do we have?"` | `insights balances` |
+| `agent "what did we spend on software?"` | `insights summary` |
+| `agent "send $50 to @alex"` | `send @alex --amount 50` |
+| `agent "pay Acme Supplies $250"` | `contacts pay "Acme Supplies" --amount 250` |
+| `agent "list my unpaid bills"` | `bills list --status unpaid` |
+| `agent "pay the AWS bill"` | `bills pay <id>` (quote-then-confirm flow is identical) |
+| `agent "show me my contacts"` | `contacts list` |
 
-The agent searches for an existing customer with the email `john@example.com`.
-
-```
-[>>>] Looking up customer: john@example.com
-```
-
-If found:
-```
-[ ->] Customer found: John Doe (cus_abc123)
-```
-
-If not found, the agent creates a new customer:
-```
-[>>>] Customer not found. Creating new customer...
-[ + ] Customer created: cus_abc123
-```
-
-When a recipient name is provided (e.g. `pay $500 to John Doe at john@example.com`), the name is split into first and last name for the new customer record.
-
-**Step 2: External Account Check**
-
-The agent checks whether the customer has any linked bank accounts or crypto wallets.
-
-```
-[>>>] Checking external accounts...
-```
-
-If one account is found, it is used as the transfer destination:
-```
-[ ->] Using account: us_bank ending in 6789
-```
-
-If multiple accounts exist, the first one is used:
-```
-[ i ] 3 accounts found. Using first account.
-```
-
-If no accounts are found, the transfer proceeds without a destination (wallet-to-wallet):
-```
-[ i ] No external accounts found. Creating transfer without destination (wallet-to-wallet).
-```
-
-**Step 3: Create Transfer**
-
-The agent creates the transfer with the resolved parameters.
-
-```
-[>>>] Creating transfer: $500 USD
-[ OK] Transfer created!
-{
-  "id": "txf_abc123",
-  "object": "transfer",
-  "status": "pending",
-  "amount": 500,
-  "currency": "USD",
-  ...
-}
-```
-
----
-
-## Check Balance Flow
-
-When you run `blaze agent "balance"`:
-
-```
-[ OK] Balance: $1250 USD (pending: $50)
-```
-
----
-
-## List Transactions Flow
-
-When you run `blaze agent "show transactions 5"`:
-
-The agent fetches up to 5 recent transactions and prints the full JSON response:
-
-```json
-{
-  "object": "list",
-  "data": [
-    {
-      "id": "txn_abc123",
-      "object": "transaction",
-      "type": "transfer",
-      "status": "completed",
-      "amount": 500,
-      "currency": "USD",
-      "description": "Transfer to john@example.com",
-      "created_at": "2025-03-15T10:30:00Z"
-    }
-  ],
-  "has_more": false,
-  "next_cursor": null
-}
-```
-
----
-
-## Comparison with CLI Commands
-
-Agent mode is a convenience layer over the standard CLI. The same operations can be performed with explicit commands:
-
-| Agent Command | Equivalent CLI Command |
-|---------------|----------------------|
-| `blaze agent "send $500 to john@example.com"` | `blaze customers create --email john@example.com` then `blaze transfers create --amount 500 --customer-id cus_abc123` |
-| `blaze agent "balance"` | `blaze balance` |
-| `blaze agent "list transactions 5"` | `blaze transactions list --limit 5` |
-
-The agent mode is best for quick, common operations. For full control over all parameters (destination type, metadata, source accounts), use the standard CLI commands directly.
+Use agent mode for quick, ambiguous, or compound requests; use direct CLI commands when you need exact flag control or fully scriptable, deterministic output.

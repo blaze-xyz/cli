@@ -1,6 +1,6 @@
 import { Command } from "commander"
 import { confirm, select } from "@inquirer/prompts"
-import { getClient, getGlobalOpts, handleError } from "../utils"
+import { getClient, getGlobalOpts, handleError, withSpinner } from "../utils"
 import { formatOutput } from "../output"
 import type { Contact, ContactBankAccount } from "../../sdk/types"
 import { estimateUsdAmount } from "../../constants/fx-rates"
@@ -57,7 +57,11 @@ export function registerContactsCommands(program: Command): void {
       try {
         const globals = getGlobalOpts(program)
         const client = await getClient(globals)
-        const result = await client.listContacts({ search: opts.search })
+        const result = await withSpinner(
+          "Loading contacts…",
+          () => client.listContacts({ search: opts.search }),
+          { format: globals.format }
+        )
         const formatted = (result.data as Contact[]).map(c => {
           const name =
             c.business_name ||

@@ -20,6 +20,7 @@ jest.mock("../../cli/utils", () => ({
     throw err
   }),
   requireBusinessContext: jest.fn().mockResolvedValue("biz_123"),
+  withSpinner: jest.fn((_text: string, fn: () => Promise<unknown>) => fn()),
 }))
 
 jest.mock("../../cli/auth-utils", () => ({

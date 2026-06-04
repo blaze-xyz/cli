@@ -80,6 +80,7 @@ describe("resolveBaseUrl", () => {
   beforeEach(() => {
     process.env = { ...originalEnv }
     delete process.env.BLAZE_BASE_URL
+    delete process.env.BLAZE_API_URL
     jest.resetAllMocks()
   })
 
@@ -114,6 +115,26 @@ describe("resolveBaseUrl", () => {
     mockedFs.existsSync.mockReturnValue(false)
     const result = resolveBaseUrl()
     expect(result).toBe("https://api.blaze.money")
+  })
+
+  it("falls back to BLAZE_API_URL when BLAZE_BASE_URL is not set (back-compat alias)", () => {
+    process.env.BLAZE_API_URL = "https://legacy.api.blaze.money"
+    const result = resolveBaseUrl()
+    expect(result).toBe("https://legacy.api.blaze.money")
+  })
+
+  it("prefers BLAZE_BASE_URL over BLAZE_API_URL when both are set", () => {
+    process.env.BLAZE_BASE_URL = "https://canonical.api.blaze.money"
+    process.env.BLAZE_API_URL = "https://legacy.api.blaze.money"
+    const result = resolveBaseUrl()
+    expect(result).toBe("https://canonical.api.blaze.money")
+  })
+
+  it("prefers flag value over both BLAZE_BASE_URL and BLAZE_API_URL", () => {
+    process.env.BLAZE_BASE_URL = "https://canonical.api.blaze.money"
+    process.env.BLAZE_API_URL = "https://legacy.api.blaze.money"
+    const result = resolveBaseUrl("https://flag.api.blaze.money")
+    expect(result).toBe("https://flag.api.blaze.money")
   })
 })
 

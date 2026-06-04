@@ -1,5 +1,5 @@
 import { Command } from "commander"
-import { getClient, getGlobalOpts, handleError } from "../utils"
+import { getClient, getGlobalOpts, handleError, withSpinner } from "../utils"
 import { formatOutput } from "../output"
 
 export function registerAccountsCommands(program: Command): void {
@@ -15,7 +15,11 @@ export function registerAccountsCommands(program: Command): void {
       try {
         const globals = getGlobalOpts(program)
         const client = await getClient(globals)
-        const result = await client.listVirtualAccounts(opts.customerId)
+        const result = await withSpinner(
+          "Loading virtual accounts…",
+          () => client.listVirtualAccounts(opts.customerId),
+          { format: globals.format }
+        )
         formatOutput(result.data, globals.format)
       } catch (err) {
         handleError(err)
@@ -31,9 +35,10 @@ export function registerAccountsCommands(program: Command): void {
       try {
         const globals = getGlobalOpts(program)
         const client = await getClient(globals)
-        const account = await client.getVirtualAccount(
-          opts.customerId,
-          opts.vaId
+        const account = await withSpinner(
+          `Loading virtual account ${opts.vaId}…`,
+          () => client.getVirtualAccount(opts.customerId, opts.vaId),
+          { format: globals.format }
         )
         formatOutput(account, globals.format)
       } catch (err) {

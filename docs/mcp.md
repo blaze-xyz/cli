@@ -30,7 +30,7 @@ The Blaze CLI includes a built-in [Model Context Protocol (MCP)](https://modelco
 }
 ```
 
-3. Restart Claude Desktop. You should see "blaze" listed as an available MCP server with 55 tools.
+3. Restart Claude Desktop. You should see "blaze" listed as an available MCP server with 74 tools.
 
 **Alternative using a global install:**
 
@@ -106,7 +106,7 @@ Alternatively, add the server to your project's `.claude/settings.json` to share
 }
 ```
 
-Once configured, Claude Code can call any of the 55 Blaze tools directly inside your terminal. Try asking:
+Once configured, Claude Code can call any of the 74 Blaze tools directly inside your terminal. Try asking:
 
 ```
 > check my blaze balance
@@ -145,7 +145,7 @@ Then reference it on each run:
 codex --full-auto --mcp-config mcp.json
 ```
 
-Codex will have access to all 55 Blaze tools and can perform payment operations autonomously.
+Codex will have access to all 74 Blaze tools and can perform payment operations autonomously.
 
 ---
 
@@ -175,7 +175,7 @@ The server reads the API key from the `BLAZE_API_KEY` environment variable or fr
 
 ## Available Tools
 
-The MCP server exposes 55 tools organized by resource.
+The MCP server exposes 74 tools organized by resource.
 
 > **Note:** API key management operations are intentionally excluded from the MCP server. 
 > Team member removal and ownership transfer are also excluded. 
@@ -293,6 +293,41 @@ The MCP server exposes 55 tools organized by resource.
 | `blaze_cancel_subscription` | Cancel a subscription | `id`, `cancel_immediately` |
 | `blaze_pause_subscription` | Pause an active subscription | `id` |
 | `blaze_resume_subscription` | Resume a paused subscription | `id` |
+
+### Insights (Plaid-connected bank analytics)
+
+Requires a Plaid-connected bank on the active business and the `SPENDING_INSIGHTS` feature gate. Read-only — these tools cannot move money.
+
+| Tool | Description | Key Parameters |
+|------|-------------|----------------|
+| `blaze_get_spending_summary` | Aggregated spend by category and merchant for a period | `start_date`, `end_date` |
+| `blaze_list_bank_transactions` | Plaid bank-transaction line items with merchant + category | `start_date`, `end_date`, `account_id`, `limit`, `cursor` |
+| `blaze_get_bank_balances` | Current and available balances across connected bank accounts | -- |
+
+### Bills (AP automation)
+
+Requires the `BILLS_PAGE` feature gate. Payment execution uses a **two-phase quote-then-confirm** pattern: call `blaze_quote_bill_payment` first, surface the quote to the user, then call `blaze_pay_bill` with `quote_id` and `confirm: true`. Quotes expire after 15 minutes.
+
+| Tool | Description | Key Parameters |
+|------|-------------|----------------|
+| `blaze_list_bills` | List bills with optional filters | `status`, `vendor_id`, `due_before`, `limit`, `cursor` |
+| `blaze_get_bill` | Get a single bill by ID | `bill_id` |
+| `blaze_approve_bill` | Approve a bill for payment | `bill_id` |
+| `blaze_reject_bill` | Reject a bill | `bill_id`, `reason` |
+| `blaze_quote_bill_payment` | Quote a bill payment (Phase 1 of two-phase pay) | `bill_id`, `source_funding_account_id`, `expedite` |
+| `blaze_pay_bill` | Pay a bill (Phase 2 — requires fresh `quote_id` + `confirm: true`) | `bill_id`, `quote_id`, `confirm` |
+| `blaze_list_bill_vendors` | List vendors known to the business | `limit` |
+| `blaze_get_bill_vendor` | Get a vendor by ID | `vendor_id` |
+| `blaze_connect_gmail_start` | Start the Gmail OAuth flow for invoice extraction | -- |
+| `blaze_connect_gmail_finalize` | Finalize Gmail OAuth after the user approves | `session_id` |
+| `blaze_list_gmail_integrations` | List connected Gmail integrations | -- |
+| `blaze_sync_bills` | Trigger a manual Gmail sync for one integration | `integration_id` |
+| `blaze_list_pending_bill_approvals` | List bill approval requests awaiting human review | -- |
+| `blaze_approve_bill_approval_request` | Approve a pending bill approval request | `approval_request_id` |
+| `blaze_reject_bill_approval_request` | Reject a pending bill approval request | `approval_request_id`, `reason` |
+| `blaze_list_bills_activity_log` | List activity log entries for audit trail | `bill_id`, `category`, `limit` |
+
+> **Note:** There is no `blaze_disconnect_gmail` MCP tool — Gmail disconnection is CLI-only (`blaze bills gmail-integrations disconnect <id>`) to avoid agents silently breaking the bill ingestion pipeline.
 
 ### FX Rates & Quotes
 

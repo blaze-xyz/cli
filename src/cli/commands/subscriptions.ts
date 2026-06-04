@@ -1,5 +1,5 @@
 import { Command } from "commander"
-import { getClient, getGlobalOpts, handleError } from "../utils"
+import { getClient, getGlobalOpts, handleError, withSpinner } from "../utils"
 import { formatOutput } from "../output"
 
 export function registerSubscriptionsCommands(program: Command): void {
@@ -22,11 +22,16 @@ export function registerSubscriptionsCommands(program: Command): void {
         try {
           const globals = getGlobalOpts(program)
           const client = await getClient(globals)
-          const result = await client.listSubscriptions({
-            limit: opts.limit,
-            status: opts.status,
-            customer_id: opts.customerId,
-          })
+          const result = await withSpinner(
+            "Loading subscriptions…",
+            () =>
+              client.listSubscriptions({
+                limit: opts.limit,
+                status: opts.status,
+                customer_id: opts.customerId,
+              }),
+            { format: globals.format }
+          )
           formatOutput(result.data, globals.format)
         } catch (err) {
           handleError(err)
@@ -41,7 +46,11 @@ export function registerSubscriptionsCommands(program: Command): void {
       try {
         const globals = getGlobalOpts(program)
         const client = await getClient(globals)
-        const result = await client.getSubscription(id)
+        const result = await withSpinner(
+          `Loading subscription ${id}…`,
+          () => client.getSubscription(id),
+          { format: globals.format }
+        )
         formatOutput(result, globals.format)
       } catch (err) {
         handleError(err)

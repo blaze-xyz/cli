@@ -215,8 +215,9 @@ This file is created when you run `blaze auth login --api-key` (deprecated).
 |----------|-------------|
 | `BLAZE_API_KEY` | API key for authentication |
 | `BLAZE_BASE_URL` | Override the API base URL (defaults to `https://api.blaze.money`) |
+| `BLAZE_API_URL` | Deprecated alias for `BLAZE_BASE_URL`. Still accepted for back-compat. |
 
-The base URL variable follows the same precedence as the API key: the `--base-url` CLI flag takes priority over `BLAZE_BASE_URL`, which takes priority over the `base_url` field in the config file.
+The base URL variable follows the same precedence as the API key: the `--base-url` CLI flag takes priority over `BLAZE_BASE_URL`, which takes priority over `BLAZE_API_URL` (back-compat alias), which takes priority over the `base_url` field in the config file.
 
 ---
 

@@ -6,6 +6,7 @@ import {
   getConfig,
   getGlobalOpts,
   handleError,
+  withSpinner,
   writeConfig,
 } from "../utils"
 
@@ -21,10 +22,15 @@ export function registerBusinessesCommands(program: Command): void {
       try {
         const globals = getGlobalOpts(program)
         const client = await getClient(globals)
-        const result = await client.get<{
-          object: string
-          data: Array<{ id: string; name: string; role: string }>
-        }>("/v1/me/businesses")
+        const result = await withSpinner(
+          "Loading businesses…",
+          () =>
+            client.get<{
+              object: string
+              data: Array<{ id: string; name: string; role: string }>
+            }>("/v1/me/businesses"),
+          { format: globals.format }
+        )
         formatOutput(result.data, globals.format)
       } catch (err) {
         handleError(err)

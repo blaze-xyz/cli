@@ -1,6 +1,6 @@
 import { Command } from "commander"
 import { confirm } from "@inquirer/prompts"
-import { getClient, getGlobalOpts, handleError } from "../utils"
+import { getClient, getGlobalOpts, handleError, withSpinner } from "../utils"
 import { formatOutput } from "../output"
 import type { TeamRole } from "../../sdk/types"
 
@@ -14,7 +14,11 @@ export function registerTeamCommands(program: Command): void {
       try {
         const globals = getGlobalOpts(program)
         const client = await getClient(globals)
-        const result = await client.listTeamMembers()
+        const result = await withSpinner(
+          "Loading team members…",
+          () => client.listTeamMembers(),
+          { format: globals.format }
+        )
         formatOutput(result.data, globals.format)
       } catch (err) {
         handleError(err)
@@ -28,7 +32,11 @@ export function registerTeamCommands(program: Command): void {
       try {
         const globals = getGlobalOpts(program)
         const client = await getClient(globals)
-        const result = await client.listPendingInvitations()
+        const result = await withSpinner(
+          "Loading pending invitations…",
+          () => client.listPendingInvitations(),
+          { format: globals.format }
+        )
         formatOutput(result.data, globals.format)
       } catch (err) {
         handleError(err)

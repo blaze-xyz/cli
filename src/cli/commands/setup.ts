@@ -2,7 +2,12 @@ import { Command } from "commander"
 import { input, select, confirm, password } from "@inquirer/prompts"
 import { BlazeGraphQLClient } from "../../sdk/graphql"
 import { BlazeClient } from "../../sdk/client"
-import { saveConfig, detectEnvironment, loadConfig } from "../../sdk/config"
+import {
+  saveConfig,
+  detectEnvironment,
+  loadConfig,
+  resolveBaseUrl,
+} from "../../sdk/config"
 import { handleError } from "../utils"
 import { saveAuth } from "../auth-utils"
 
@@ -489,7 +494,7 @@ function formatCurrency(amount: number, currency: string): string {
 }
 
 async function runBrowserAuth(): Promise<void> {
-  const API_ENDPOINT = process.env.BLAZE_API_URL || "https://api.blaze.money"
+  const API_ENDPOINT = resolveBaseUrl()
 
   const chalk = (await import("chalk")).default
   const ora = (await import("ora")).default

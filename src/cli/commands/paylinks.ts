@@ -1,5 +1,5 @@
 import { Command } from "commander"
-import { getClient, getGlobalOpts, handleError } from "../utils"
+import { getClient, getGlobalOpts, handleError, withSpinner } from "../utils"
 import { formatOutput } from "../output"
 import type { Currency } from "../../sdk/types"
 
@@ -16,9 +16,14 @@ export function registerPaylinksCommands(program: Command): void {
       try {
         const globals = getGlobalOpts(program)
         const client = await getClient(globals)
-        const result = await client.listPaymentLinks({
-          limit: opts.limit,
-        })
+        const result = await withSpinner(
+          "Loading payment links…",
+          () =>
+            client.listPaymentLinks({
+              limit: opts.limit,
+            }),
+          { format: globals.format }
+        )
         formatOutput(result.data, globals.format)
       } catch (err) {
         handleError(err)
@@ -32,7 +37,11 @@ export function registerPaylinksCommands(program: Command): void {
       try {
         const globals = getGlobalOpts(program)
         const client = await getClient(globals)
-        const link = await client.getPaymentLink(id)
+        const link = await withSpinner(
+          `Loading payment link ${id}…`,
+          () => client.getPaymentLink(id),
+          { format: globals.format }
+        )
         formatOutput(link, globals.format)
       } catch (err) {
         handleError(err)

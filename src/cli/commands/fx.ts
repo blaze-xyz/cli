@@ -1,5 +1,5 @@
 import { Command } from "commander"
-import { getClient, getGlobalOpts, handleError } from "../utils"
+import { getClient, getGlobalOpts, handleError, withSpinner } from "../utils"
 import { formatOutput } from "../output"
 
 export function registerFxCommands(program: Command): void {
@@ -17,7 +17,11 @@ export function registerFxCommands(program: Command): void {
         const globals = getGlobalOpts(program)
         const client = await getClient(globals)
         const baseCurrency = opts.from || opts.base
-        const result = await client.getFxRates(baseCurrency)
+        const result = await withSpinner(
+          "Loading FX rates…",
+          () => client.getFxRates(baseCurrency),
+          { format: globals.format }
+        )
 
         const r = result as unknown as Record<string, unknown>
         const base = (r.base as string) || baseCurrency || "USD"
@@ -85,11 +89,16 @@ export function registerFxCommands(program: Command): void {
       try {
         const globals = getGlobalOpts(program)
         const client = await getClient(globals)
-        const result = await client.createFxQuote({
-          from_currency: opts.from,
-          to_currency: opts.to,
-          amount: opts.amount,
-        })
+        const result = await withSpinner(
+          "Fetching FX quote…",
+          () =>
+            client.createFxQuote({
+              from_currency: opts.from,
+              to_currency: opts.to,
+              amount: opts.amount,
+            }),
+          { format: globals.format }
+        )
 
         if (globals.format === "json") {
           formatOutput(result, "json")

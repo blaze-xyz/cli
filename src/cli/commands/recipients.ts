@@ -1,5 +1,5 @@
 import { Command } from "commander"
-import { getClient, getGlobalOpts, handleError } from "../utils"
+import { getClient, getGlobalOpts, handleError, withSpinner } from "../utils"
 import { formatOutput } from "../output"
 import type { ExternalAccountType, CryptoNetwork } from "../../sdk/types"
 
@@ -16,7 +16,11 @@ export function registerRecipientsCommands(program: Command): void {
       try {
         const globals = getGlobalOpts(program)
         const client = await getClient(globals)
-        const result = await client.listExternalAccounts(opts.customerId)
+        const result = await withSpinner(
+          "Loading external accounts…",
+          () => client.listExternalAccounts(opts.customerId),
+          { format: globals.format }
+        )
         formatOutput(result.data, globals.format)
       } catch (err) {
         handleError(err)

@@ -1,5 +1,5 @@
 import { Command } from "commander"
-import { getClient, getGlobalOpts, handleError } from "../utils"
+import { getClient, getGlobalOpts, handleError, withSpinner } from "../utils"
 import { formatOutput } from "../output"
 import type { AnalyticsPeriod } from "../../sdk/types"
 
@@ -19,8 +19,13 @@ export function registerAnalyticsCommands(program: Command): void {
       try {
         const globals = getGlobalOpts(program)
         const client = await getClient(globals)
-        const result = await client.getAnalyticsOverview(
-          opts.period as AnalyticsPeriod | undefined
+        const result = await withSpinner(
+          "Loading analytics overview…",
+          () =>
+            client.getAnalyticsOverview(
+              opts.period as AnalyticsPeriod | undefined
+            ),
+          { format: globals.format }
         )
         formatOutput(result, globals.format)
       } catch (err) {

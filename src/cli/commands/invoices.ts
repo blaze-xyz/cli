@@ -1,5 +1,5 @@
 import { Command } from "commander"
-import { getClient, getGlobalOpts, handleError } from "../utils"
+import { getClient, getGlobalOpts, handleError, withSpinner } from "../utils"
 import { formatOutput } from "../output"
 
 export function registerInvoicesCommands(program: Command): void {
@@ -20,11 +20,16 @@ export function registerInvoicesCommands(program: Command): void {
         try {
           const globals = getGlobalOpts(program)
           const client = await getClient(globals)
-          const result = await client.listInvoices({
-            limit: opts.limit,
-            status: opts.status,
-            customer_id: opts.customerId,
-          })
+          const result = await withSpinner(
+            "Loading invoices…",
+            () =>
+              client.listInvoices({
+                limit: opts.limit,
+                status: opts.status,
+                customer_id: opts.customerId,
+              }),
+            { format: globals.format }
+          )
           formatOutput(result.data, globals.format)
         } catch (err) {
           handleError(err)
@@ -39,7 +44,11 @@ export function registerInvoicesCommands(program: Command): void {
       try {
         const globals = getGlobalOpts(program)
         const client = await getClient(globals)
-        const result = await client.getInvoice(id)
+        const result = await withSpinner(
+          `Loading invoice ${id}…`,
+          () => client.getInvoice(id),
+          { format: globals.format }
+        )
         formatOutput(result, globals.format)
       } catch (err) {
         handleError(err)

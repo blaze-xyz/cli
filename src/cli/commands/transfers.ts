@@ -1,5 +1,5 @@
 import { Command } from "commander"
-import { getClient, getGlobalOpts, handleError } from "../utils"
+import { getClient, getGlobalOpts, handleError, withSpinner } from "../utils"
 import { formatOutput } from "../output"
 import type { Currency, TransferSourceType } from "../../sdk/types"
 
@@ -15,10 +15,15 @@ export function registerTransfersCommands(program: Command): void {
       try {
         const globals = getGlobalOpts(program)
         const client = await getClient(globals)
-        const result = await client.listTransfers({
-          limit: opts.limit,
-          status: opts.status,
-        })
+        const result = await withSpinner(
+          "Loading transfers…",
+          () =>
+            client.listTransfers({
+              limit: opts.limit,
+              status: opts.status,
+            }),
+          { format: globals.format }
+        )
         formatOutput(result.data, globals.format)
       } catch (err) {
         handleError(err)
@@ -32,7 +37,11 @@ export function registerTransfersCommands(program: Command): void {
       try {
         const globals = getGlobalOpts(program)
         const client = await getClient(globals)
-        const transfer = await client.getTransfer(id)
+        const transfer = await withSpinner(
+          `Loading transfer ${id}…`,
+          () => client.getTransfer(id),
+          { format: globals.format }
+        )
 
         if (globals.format === "json") {
           formatOutput(transfer, "json")

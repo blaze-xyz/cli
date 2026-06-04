@@ -1,5 +1,5 @@
 import { Command } from "commander"
-import { getClient, getGlobalOpts, handleError } from "../utils"
+import { getClient, getGlobalOpts, handleError, withSpinner } from "../utils"
 import { formatOutput } from "../output"
 import { CurrencyAmount } from "../../sdk/types"
 import { getAuth } from "../auth-utils"
@@ -24,7 +24,11 @@ export function registerBalanceCommand(program: Command): void {
       try {
         const globals = getGlobalOpts(program)
         const client = await getClient(globals)
-        const balance = await client.getBalance()
+        const balance = await withSpinner(
+          "Fetching balance…",
+          () => client.getBalance(),
+          { format: globals.format }
+        )
 
         if (globals.format === "json") {
           formatOutput(balance, "json")

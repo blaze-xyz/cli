@@ -1,7 +1,7 @@
 import { Command } from "commander"
 import Table from "cli-table3"
 import stringWidth from "string-width"
-import { getClient, getGlobalOpts, handleError } from "../utils"
+import { getClient, getGlobalOpts, handleError, withSpinner } from "../utils"
 import { formatOutput } from "../output"
 import { getAuth } from "../auth-utils"
 import { loadConfig } from "../../sdk/config"
@@ -104,11 +104,16 @@ export function registerTransactionsCommands(program: Command): void {
 
           // Personal mode uses /v1/payments (consumer transactions)
           if (isPersonal) {
-            const personalResult = await client.get<{
-              object: string
-              data: Array<Record<string, unknown>>
-              has_more: boolean
-            }>("/v1/payments" + (opts.limit ? `?limit=${opts.limit}` : ""))
+            const personalResult = await withSpinner(
+              "Loading transactions…",
+              () =>
+                client.get<{
+                  object: string
+                  data: Array<Record<string, unknown>>
+                  has_more: boolean
+                }>("/v1/payments" + (opts.limit ? `?limit=${opts.limit}` : "")),
+              { format: globals.format }
+            )
 
             if (globals.format === "json") {
               formatOutput(personalResult.data, "json")
@@ -133,11 +138,16 @@ export function registerTransactionsCommands(program: Command): void {
             return
           }
 
-          const result = await client.listTransactions({
-            limit: opts.limit,
-            type: opts.type,
-            status: opts.status,
-          })
+          const result = await withSpinner(
+            "Loading transactions…",
+            () =>
+              client.listTransactions({
+                limit: opts.limit,
+                type: opts.type,
+                status: opts.status,
+              }),
+            { format: globals.format }
+          )
 
           if (globals.format === "json") {
             formatOutput(result.data, "json")
@@ -188,7 +198,11 @@ export function registerTransactionsCommands(program: Command): void {
       try {
         const globals = getGlobalOpts(program)
         const client = await getClient(globals)
-        const transaction = await client.getTransaction(id)
+        const transaction = await withSpinner(
+          `Loading transaction ${id}…`,
+          () => client.getTransaction(id),
+          { format: globals.format }
+        )
 
         if (globals.format === "json") {
           formatOutput(transaction, "json")

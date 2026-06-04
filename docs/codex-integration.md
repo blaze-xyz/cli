@@ -38,7 +38,7 @@ Result: [List of 23 transfers totaling $45,320]
 - Getting FX rates or quotes
 - Single-step operations with clear inputs
 
-**Available tools**: 72+ MCP tools organized by domain. See full list in [mcp.md](mcp.md).
+**Available tools**: 74 MCP tools organized by domain. See full list in [mcp.md](mcp.md).
 
 ---
 

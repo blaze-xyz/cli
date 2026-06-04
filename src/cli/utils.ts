@@ -8,7 +8,68 @@ import {
 } from "../sdk/config"
 import { getAuthToken } from "./auth-utils"
 
-const SPARK_API_URL = process.env.BLAZE_API_URL ?? "https://api.blaze.money"
+interface SpinnerOpts {
+  format?: string // skip spinner when format is "json"
+}
+
+/**
+ * Runs an async function while displaying a CLI spinner.
+ *
+ * The spinner is automatically suppressed in environments where it would be
+ * noisy or break tooling: when output format is JSON (pipe-safe), when stdout
+ * is not a TTY (piped/redirected), when NO_COLOR is set (accessibility), and
+ * when running in CI. In those cases this just awaits and returns the function
+ * result as-is.
+ *
+ * If the call takes longer than 2s the spinner text gets a `(still working…)`
+ * suffix so the user can see we're still doing work.
+ *
+ * The spinner is silently stopped on success (no checkmark/text noise — the
+ * command's own output handles that). On error it calls `spinner.fail()` and
+ * re-throws so the caller's existing error handling still runs.
+ */
+export async function withSpinner<T>(
+  text: string,
+  fn: () => Promise<T>,
+  opts?: SpinnerOpts
+): Promise<T> {
+  const shouldSkip =
+    opts?.format === "json" || // clean JSON for pipes
+    !process.stdout.isTTY || // piped or non-interactive
+    !!process.env.NO_COLOR || // user opt-out (accessibility)
+    !!process.env.CI // CI environments
+
+  if (shouldSkip) {
+    return fn()
+  }
+
+  const ora = (await import("ora")).default
+  const spinner = ora({ text, color: "cyan" }).start()
+
+  // Latency-aware text bump so the user sees signs of life on longer calls.
+  // Stays positive/direct per the user-facing copy rules in CLAUDE.md
+  // (no apologies, no "slow API" framing).
+  const startedAt = Date.now()
+  const slowAt = 2000
+  const originalText = text
+  const bumpInterval = setInterval(() => {
+    const elapsed = Date.now() - startedAt
+    if (elapsed > slowAt) {
+      spinner.text = `${originalText} (still working…)`
+    }
+  }, 500)
+
+  try {
+    const result = await fn()
+    clearInterval(bumpInterval)
+    spinner.stop()
+    return result
+  } catch (err) {
+    clearInterval(bumpInterval)
+    spinner.fail()
+    throw err
+  }
+}
 
 export async function getClient(opts: {
   apiKey?: string
@@ -48,10 +109,9 @@ export async function getClient(opts: {
   // Active bearer token (from `blaze auth`) takes priority over config-file API key
   const token = await getAuthToken()
   if (token) {
-    const baseUrl = opts.baseUrl ?? SPARK_API_URL
     return new BlazeClient({
       bearerToken: token,
-      baseUrl,
+      baseUrl: resolveBaseUrl(opts.baseUrl),
       defaultHeaders:
         Object.keys(contextHeaders).length > 0 ? contextHeaders : undefined,
     })

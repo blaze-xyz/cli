@@ -1,5 +1,5 @@
 import { Command } from "commander"
-import { getClient, getGlobalOpts, handleError } from "../utils"
+import { getClient, getGlobalOpts, handleError, withSpinner } from "../utils"
 import { formatOutput } from "../output"
 
 export function registerPaymentsCommands(program: Command): void {
@@ -13,7 +13,11 @@ export function registerPaymentsCommands(program: Command): void {
       try {
         const globals = getGlobalOpts(program)
         const client = await getClient(globals)
-        const result = await client.listPayments({ limit: opts.limit })
+        const result = await withSpinner(
+          "Loading payments…",
+          () => client.listPayments({ limit: opts.limit }),
+          { format: globals.format }
+        )
         const data =
           result &&
           typeof result === "object" &&
@@ -33,7 +37,11 @@ export function registerPaymentsCommands(program: Command): void {
       try {
         const globals = getGlobalOpts(program)
         const client = await getClient(globals)
-        const payment = await client.getPayment(id)
+        const payment = await withSpinner(
+          `Loading payment ${id}…`,
+          () => client.getPayment(id),
+          { format: globals.format }
+        )
         formatOutput(payment, globals.format)
       } catch (err) {
         handleError(err)

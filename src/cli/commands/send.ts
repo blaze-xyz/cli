@@ -1,7 +1,7 @@
 import { Command } from "commander"
 import { confirm, select } from "@inquirer/prompts"
 
-import { getClient, getGlobalOpts, handleError } from "../utils"
+import { getClient, getGlobalOpts, handleError, withSpinner } from "../utils"
 import { formatOutput } from "../output"
 import { getAuth } from "../auth-utils"
 import { estimateUsdAmount } from "../../constants/fx-rates"
@@ -53,7 +53,11 @@ export function registerSendCommand(program: Command): void {
           if (recipient.startsWith("@")) {
             // Exact blazetag lookup
             const tag = recipient.slice(1)
-            const user = await client.getUserByBlazetag(tag)
+            const user = await withSpinner(
+              "Looking up recipient…",
+              () => client.getUserByBlazetag(tag),
+              { format: globals.format }
+            )
             targetBlazetag = user.blazetag ?? tag
             targetPublicKey = user.public_key ?? undefined
             displayName =
@@ -62,7 +66,11 @@ export function registerSendCommand(program: Command): void {
               `@${tag}`
           } else {
             // Fuzzy search by name
-            const results = await client.searchUsers(recipient)
+            const results = await withSpinner(
+              "Looking up recipient…",
+              () => client.searchUsers(recipient),
+              { format: globals.format }
+            )
             const users = results.data
 
             if (users.length === 0) {
@@ -124,6 +132,7 @@ export function registerSendCommand(program: Command): void {
           }
 
           if (!opts.yes) {
+            // No spinner is active here — inquirer prompt renders cleanly.
             const confirmed = await confirm({
               message: `Send ${opts.amount} ${currency}${conversionNote} to ${displayName}${targetBlazetag ? ` (@${targetBlazetag})` : ""}?`,
             })
@@ -133,15 +142,20 @@ export function registerSendCommand(program: Command): void {
             }
           }
 
-          const result = await client.sendPayment({
-            blazetag: targetBlazetag,
-            recipientPublicKey: targetPublicKey,
-            usdcAmountInCents,
-            fiatAmountInCents,
-            currencyCode: currency,
-            exchangeRate,
-            note: opts.note,
-          })
+          const result = await withSpinner(
+            "Sending payment…",
+            () =>
+              client.sendPayment({
+                blazetag: targetBlazetag,
+                recipientPublicKey: targetPublicKey,
+                usdcAmountInCents,
+                fiatAmountInCents,
+                currencyCode: currency,
+                exchangeRate,
+                note: opts.note,
+              }),
+            { format: globals.format }
+          )
 
           if (globals.format === "json") {
             formatOutput(result, "json")

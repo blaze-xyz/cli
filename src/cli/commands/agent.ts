@@ -8,8 +8,6 @@ import {
 import { getAuthToken } from "../auth-utils"
 import { runAgent } from "../../agent"
 
-const SPARK_API_URL = process.env.BLAZE_API_URL ?? "https://api.blaze.money"
-
 export const agentCommand = new Command("agent")
   .description("Run a natural language payment command")
   .argument(
@@ -36,7 +34,7 @@ export const agentCommand = new Command("agent")
       if (bearerToken) {
         const client = new BlazeClient({
           bearerToken,
-          baseUrl: opts.baseUrl ?? SPARK_API_URL,
+          baseUrl: resolveBaseUrl(opts.baseUrl),
         })
         await runAgent(command, client)
         return

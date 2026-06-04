@@ -1,6 +1,6 @@
 import { Command } from "commander"
 import { confirm } from "@inquirer/prompts"
-import { getClient, getGlobalOpts, handleError } from "../utils"
+import { getClient, getGlobalOpts, handleError, withSpinner } from "../utils"
 import { formatOutput } from "../output"
 import type { WebhookEvent } from "../../sdk/types"
 
@@ -17,7 +17,11 @@ export function registerWebhooksCommands(program: Command): void {
       try {
         const globals = getGlobalOpts(program)
         const client = await getClient(globals)
-        const result = await client.listWebhooks({ limit: opts.limit })
+        const result = await withSpinner(
+          "Loading webhooks…",
+          () => client.listWebhooks({ limit: opts.limit }),
+          { format: globals.format }
+        )
         formatOutput(result.data, globals.format)
       } catch (err) {
         handleError(err)
@@ -31,7 +35,11 @@ export function registerWebhooksCommands(program: Command): void {
       try {
         const globals = getGlobalOpts(program)
         const client = await getClient(globals)
-        const result = await client.getWebhook(id)
+        const result = await withSpinner(
+          `Loading webhook ${id}…`,
+          () => client.getWebhook(id),
+          { format: globals.format }
+        )
         formatOutput(result, globals.format)
       } catch (err) {
         handleError(err)

@@ -976,6 +976,394 @@ Expires:      2025-03-15T12:30:00Z
 
 ---
 
+## setup
+
+Interactive onboarding flow — authenticate, confirm/create a business, and generate an API key. Use this the first time you install the CLI.
+
+```bash
+blaze setup
+```
+
+Walks through:
+
+1. Pick an authentication method (browser OAuth, JWT token, or paste an existing API key)
+2. Confirm an existing business or create a new one
+3. Generate a scoped API key (test or live)
+4. Verify the key by fetching your balance
+
+The resulting config is saved to `~/.blaze/config.json`. Cancel anytime with Ctrl+C.
+
+---
+
+## whoami
+
+Show the currently active authentication source and business context. Use this whenever a command behaves unexpectedly.
+
+```bash
+blaze whoami
+```
+
+**Example output:**
+
+```
+User:             gerson@blaze.money (usr_abc123)
+Auth source:     Bearer token (expires in 29 days)
+Active business: Blaze Payments (Admin) — bus_xyz789
+API base URL:    https://api.blaze.money
+```
+
+Unlike `blaze auth whoami` (which only checks the configured API key), `blaze whoami` includes the active business, the auth source in effect (bearer token vs API key vs config file), and bearer-token expiry.
+
+---
+
+## me
+
+View and update your Blaze profile.
+
+### me show
+
+```bash
+blaze me show
+```
+
+Shows your name, blazetag, email, phone, and user ID.
+
+### me blazetag
+
+Set or update your blazetag — the `@handle` you use on the Blaze P2P network.
+
+```bash
+blaze me blazetag <tag>
+```
+
+| Argument | Required | Description |
+|---|---|---|
+| `<tag>` | Yes | Your new blazetag (e.g. `gerson` → shows as `@gerson`) |
+
+---
+
+## businesses
+
+Manage which business context the CLI uses for requests. Required when your account is a member of one or more businesses and you want the API to return business-scoped data.
+
+### businesses list
+
+```bash
+blaze businesses list
+```
+
+Lists every business you belong to with your role for each.
+
+### businesses use
+
+Switch the active business context. Subsequent commands will send `x-business-id: <businessId>` so the API returns business-scoped data.
+
+```bash
+# Switch into a business
+blaze businesses use bus_abc123
+
+# Switch back to personal / consumer mode
+blaze businesses use
+```
+
+The active business is persisted in `~/.blaze/config.json` and survives between shell sessions. Per-command override: `--business <id>` (force a specific business) or `--personal` (ignore active business for this call).
+
+---
+
+## send
+
+Send a P2P payment to another Blaze user.
+
+```bash
+# By blazetag (exact match)
+blaze send @alex --amount 25
+
+# By name (fuzzy search; prompts to choose if multiple match)
+blaze send "Alex Rivera" --amount 25 --note "Coffee"
+```
+
+| Flag | Required | Description |
+|---|---|---|
+| `<recipient>` | Yes | Positional. Blazetag like `@alex` or a name to fuzzy-search |
+| `--amount <n>` | Yes | Amount to send |
+| `--currency <code>` | No | Three-letter currency code (default `USD`). Non-USD/USDC routes through an FX quote first |
+| `--note <text>` | No | Optional payment note |
+| `-y`, `--yes` | No | Skip the confirmation prompt |
+
+`blaze send` only delivers to other Blaze users. To pay an external bank account or crypto wallet, use [contacts pay](#contacts-pay).
+
+---
+
+## contacts
+
+Manage saved external recipients (bank accounts, CLABEs, crypto wallets) and pay them directly. Contacts are CLI-only — they are not exposed through the MCP server.
+
+### contacts list
+
+```bash
+blaze contacts list
+blaze contacts list --search "Acme"
+```
+
+### contacts add
+
+Add a new contact.
+
+```bash
+# US bank account
+blaze contacts add \
+  --first-name Alex --last-name Rivera \
+  --phone +14155551234 \
+  --type bank \
+  --routing-number 121000248 \
+  --account-number 1234567890
+
+# Mexican CLABE
+blaze contacts add \
+  --first-name Maria --last-name Lopez \
+  --phone +525555551234 \
+  --type clabe --clabe 002180078000001234
+
+# Crypto wallet
+blaze contacts add \
+  --first-name Pat --last-name Doe \
+  --phone +14155555678 \
+  --type crypto \
+  --wallet-address GABC...XYZ --network stellar
+```
+
+### contacts pay
+
+Pay a contact's bank account by name or ID. Confirms before sending (use `-y` to skip).
+
+```bash
+blaze contacts pay "Acme Supplies" --amount 250.00
+```
+
+| Flag | Required | Description |
+|---|---|---|
+| `<nameOrId>` | Yes | Contact name (fuzzy search) or CUID |
+| `--amount <n>` | Yes | Amount to send |
+| `--currency <code>` | No | Defaults to the bank account's currency |
+| `--bank-account-id <id>` | No | Pick a specific account (prompts if multiple and omitted) |
+| `--note <text>` | No | Optional payment note |
+| `-y`, `--yes` | No | Skip the confirmation prompt |
+
+### contacts remove
+
+```bash
+blaze contacts remove <id>
+blaze contacts remove <id> --yes   # skip confirmation
+```
+
+---
+
+## payments
+
+List and inspect P2P payments — the outbound history from `blaze send`.
+
+### payments list
+
+```bash
+blaze payments list
+blaze payments list --limit 5
+```
+
+### payments get
+
+```bash
+blaze payments get <id>
+```
+
+---
+
+## bills
+
+Accounts Payable bills — Gmail-synced invoice ingestion, approval workflow, and the two-phase quote-then-confirm payment pattern. Requires a business context (`blaze businesses use <id>`) and the `BILLS_PAGE` feature enabled on the business.
+
+### bills list
+
+```bash
+blaze bills list
+blaze bills list --status unpaid
+blaze bills list --vendor-id ven_abc --due-before 2026-06-30 --limit 50
+```
+
+### bills show
+
+```bash
+blaze bills show <id>
+```
+
+### bills approve / bills reject
+
+```bash
+blaze bills approve <id>
+blaze bills reject <id> --reason "duplicate"
+```
+
+### bills pay
+
+Two-phase quote-then-confirm payment. The CLI fetches a quote (amount + fees + ETA), prints it, and waits for your `yes` before executing.
+
+```bash
+blaze bills pay <id>
+blaze bills pay <id> --from <fundingAccountId> --expedite -y
+```
+
+| Flag | Required | Description |
+|---|---|---|
+| `<id>` | Yes | Bill ID |
+| `--from <id>` | No | Source funding account (defaults to the business's default wallet) |
+| `--expedite` | No | Pay via expedited routing if available (higher fees) |
+| `-y`, `--yes` | No | Skip the confirmation prompt after the quote is shown |
+
+### bills pending-approvals
+
+Bills that require human approval before they can be paid.
+
+```bash
+blaze bills pending-approvals list
+blaze bills pending-approvals approve <approvalId>
+blaze bills pending-approvals reject <approvalId> --reason "wrong amount"
+```
+
+### bills logs
+
+Audit-trail entries for compliance review.
+
+```bash
+blaze bills logs
+blaze bills logs --bill <billId> --category PAYMENT --limit 50
+```
+
+### bills vendors list
+
+```bash
+blaze bills vendors list
+```
+
+### bills connect-gmail
+
+Start the Gmail OAuth flow so Blaze can extract invoices from your inbox.
+
+```bash
+blaze bills connect-gmail
+blaze bills connect-gmail --no-browser   # print URL only; don't auto-open
+```
+
+Prints a URL, waits for you to authenticate, then polls the session for up to 5 minutes.
+
+### bills gmail-integrations
+
+```bash
+blaze bills gmail-integrations list
+blaze bills gmail-integrations disconnect <id>
+```
+
+### bills sync
+
+Force a manual Gmail sync.
+
+```bash
+blaze bills sync                          # sync all integrations
+blaze bills sync --integration <id>       # sync a single integration
+```
+
+### bills setup
+
+Prints onboarding instructions only — no API call.
+
+```bash
+blaze bills setup
+```
+
+---
+
+## insights
+
+Read-only analytics over the business's Plaid-connected bank accounts. Requires the `SPENDING_INSIGHTS` feature gate enabled on the business and at least one connected bank.
+
+### insights summary
+
+Spending summary by category and top merchants for a date range.
+
+```bash
+blaze insights summary
+blaze insights summary --period 7d
+blaze insights summary --period 30d
+blaze insights summary --period 90d
+blaze insights summary --period 3m
+blaze insights summary --start-date 2026-04-01 --end-date 2026-04-30
+```
+
+| Flag | Description |
+|---|---|
+| `--period <duration>` | Quick range: `7d`, `30d`, `90d`, `1m`, `3m`, `6m`, `1y`. Overrides `--start-date`/`--end-date` when both are passed. |
+| `--start-date <iso>` | Filter range start (ISO 8601). Ignored if `--period` is set. |
+| `--end-date <iso>` | Filter range end (ISO 8601). Ignored if `--period` is set. |
+
+### insights transactions
+
+Bank transaction line items with merchant + category data.
+
+```bash
+blaze insights transactions
+blaze insights transactions --period 30d --limit 50
+blaze insights transactions \
+  --start-date 2026-04-01 --account-id acc_abc --cursor <c>
+```
+
+| Flag | Description |
+|---|---|
+| `--period <duration>` | Quick range: `7d`, `30d`, `90d`, `1m`, `3m`, `6m`, `1y`. Overrides `--start-date`/`--end-date` when both are passed. |
+| `--start-date <iso>` | Filter range start (ISO 8601) |
+| `--end-date <iso>` | Filter range end (ISO 8601) |
+| `--account-id <id>` | Filter to a single connected Plaid account |
+| `--limit <n>` | Page size (max 100) |
+| `--cursor <c>` | Pagination cursor |
+
+### insights balances
+
+Live current/available balances across all connected bank accounts.
+
+```bash
+blaze insights balances
+```
+
+All three commands are read-only — they cannot move money.
+
+---
+
+## memory
+
+Manage the agent's local memory file at `~/.blaze/agent-memory.md`. Used by `blaze agent` to recall recurring payment patterns (e.g. "pay my rent") and recent payment history.
+
+### memory show
+
+```bash
+blaze memory show
+```
+
+### memory clear
+
+Wipe the entire memory file.
+
+```bash
+blaze memory clear
+blaze memory clear --yes   # skip confirmation
+```
+
+### memory forget
+
+Remove a single section by pattern (matches against headings).
+
+```bash
+blaze memory forget "rent"
+```
+
+---
+
 ## Output Formats
 
 All commands support two output formats via the `--format` flag.

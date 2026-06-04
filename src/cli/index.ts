@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 import { Command, CommanderError } from "commander"
+import packageJson from "../../package.json"
 import { agentCommand } from "./commands/agent"
 import { registerAuthCommands } from "./commands/auth"
 import { registerBalanceCommand } from "./commands/balance"
@@ -35,7 +36,7 @@ const program = new Command()
 program
   .name("blaze")
   .description("Blaze CLI — manage payments from the command line")
-  .version("0.1.0")
+  .version(packageJson.version)
   .option("--api-key <key>", "API key (overrides config)")
   .option("--base-url <url>", "API base URL")
   .option("--format <format>", "Output format: json or table", "table")
