@@ -73,6 +73,16 @@ import type {
   DuplicateCheckParams,
   DuplicateCheckResult,
   CashFlowForecast,
+  Product,
+  CreateProductInput,
+  UpdateProductInput,
+  ListProductsParams,
+  Coupon,
+  CreateCouponInput,
+  UpdateCouponInput,
+  ListCouponsParams,
+  ValidateCouponInput,
+  ValidateCouponResult,
 } from "./types"
 
 export interface BlazeClientOptions {
@@ -1015,6 +1025,74 @@ export class BlazeClient {
           description: l.description,
         })),
       }
+    )
+  }
+
+  // ============================================
+  // Products
+  // ============================================
+
+  async listProducts(
+    params?: ListProductsParams
+  ): Promise<PaginatedList<Product>> {
+    return this.request<PaginatedList<Product>>(
+      "GET",
+      `/v1/products${this.buildQuery(params)}`
+    )
+  }
+
+  async getProduct(id: string): Promise<Product> {
+    return this.request<Product>("GET", `/v1/products/${id}`)
+  }
+
+  async createProduct(data: CreateProductInput): Promise<Product> {
+    return this.request<Product>("POST", "/v1/products", data)
+  }
+
+  async updateProduct(id: string, data: UpdateProductInput): Promise<Product> {
+    return this.request<Product>("PATCH", `/v1/products/${id}`, data)
+  }
+
+  async archiveProduct(id: string): Promise<Product> {
+    return this.request<Product>("DELETE", `/v1/products/${id}`)
+  }
+
+  // ============================================
+  // Coupons
+  // ============================================
+
+  async listCoupons(
+    params?: ListCouponsParams
+  ): Promise<PaginatedList<Coupon>> {
+    return this.request<PaginatedList<Coupon>>(
+      "GET",
+      `/v1/coupons${this.buildQuery(params)}`
+    )
+  }
+
+  async getCoupon(id: string): Promise<Coupon> {
+    return this.request<Coupon>("GET", `/v1/coupons/${id}`)
+  }
+
+  async createCoupon(data: CreateCouponInput): Promise<Coupon> {
+    return this.request<Coupon>("POST", "/v1/coupons", data)
+  }
+
+  async updateCoupon(id: string, data: UpdateCouponInput): Promise<Coupon> {
+    return this.request<Coupon>("PATCH", `/v1/coupons/${id}`, data)
+  }
+
+  async deactivateCoupon(id: string): Promise<void> {
+    await this.request<void>("DELETE", `/v1/coupons/${id}`)
+  }
+
+  async validateCoupon(
+    data: ValidateCouponInput
+  ): Promise<ValidateCouponResult> {
+    return this.request<ValidateCouponResult>(
+      "POST",
+      "/v1/coupons/validate",
+      data
     )
   }
 }

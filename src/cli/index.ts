@@ -29,6 +29,8 @@ import { registerPaymentsCommands } from "./commands/payments"
 import { registerMemoryCommands } from "./commands/memory"
 import { registerBillsCommands } from "./commands/bills"
 import { registerAccountingCommands } from "./commands/accounting"
+import { registerProductsCommands } from "./commands/products"
+import { registerCouponsCommands } from "./commands/coupons"
 import { registerWhoamiCommands } from "./commands/whoami"
 
 const program = new Command()
@@ -78,6 +80,8 @@ registerPaymentsCommands(program)
 registerMemoryCommands(program)
 registerBillsCommands(program)
 registerAccountingCommands(program)
+registerProductsCommands(program)
+registerCouponsCommands(program)
 registerWhoamiCommands(program)
 
 try {

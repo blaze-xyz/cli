@@ -775,3 +775,116 @@ export interface CashFlowForecast {
   currentBalanceMinorUnits: number
   currency: string
 }
+
+// ============================================
+// Products
+// ============================================
+
+export interface Product {
+  id: string
+  object: "product"
+  name: string
+  description: string | null
+  image_url: string | null
+  price: number
+  currency: string
+  is_recurring: boolean
+  recurring_interval: string | null
+  is_active: boolean
+  created_at: string
+  updated_at: string
+}
+
+export interface CreateProductInput {
+  name: string
+  description?: string
+  price: number
+  currency?: string
+  is_recurring?: boolean
+  recurring_interval?: string
+  image_base64?: string
+  image_file_name?: string
+  image_mime_type?: string
+  image_url?: string
+}
+
+export interface UpdateProductInput {
+  name?: string
+  description?: string
+  price?: number
+  currency?: string
+  is_recurring?: boolean
+  recurring_interval?: string
+  is_active?: boolean
+  image_base64?: string
+  image_file_name?: string
+  image_mime_type?: string
+  image_url?: string
+}
+
+export interface ListProductsParams extends PaginationParams {
+  is_active?: boolean
+}
+
+// ============================================
+// Coupons
+// ============================================
+
+export interface Coupon {
+  id: string
+  object: "coupon"
+  code: string
+  discount_type: "percentage" | "fixed_amount"
+  discount_value: number
+  currency: string | null
+  max_redemptions: number | null
+  redemption_count: number
+  expires_at: string | null
+  applies_to: string[] | null
+  minimum_amount: number | null
+  is_active: boolean
+  metadata: Record<string, string> | null
+  created_at: string
+  updated_at: string
+}
+
+export interface CreateCouponInput {
+  code: string
+  discount_type: string
+  discount_value: number
+  currency?: string
+  max_redemptions?: number
+  expires_at?: string
+  applies_to?: string[]
+  minimum_amount?: number
+  metadata?: Record<string, string>
+}
+
+export interface UpdateCouponInput {
+  is_active?: boolean
+  max_redemptions?: number
+  expires_at?: string
+  metadata?: Record<string, string>
+}
+
+export interface ListCouponsParams extends PaginationParams {
+  is_active?: boolean
+}
+
+export interface ValidateCouponInput {
+  code: string
+  amount: number
+  currency: string
+  product_ids?: string[]
+}
+
+export interface ValidateCouponResult {
+  valid: boolean
+  discount?: {
+    type: string
+    value: number
+    amount_off: number
+    final_amount: number
+  }
+  error?: string
+}
