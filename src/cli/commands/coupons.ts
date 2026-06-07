@@ -1,4 +1,5 @@
 import { Command } from "commander"
+import { confirm } from "@inquirer/prompts"
 import { getClient, getGlobalOpts, handleError, withSpinner } from "../utils"
 import { formatOutput } from "../output"
 
@@ -31,7 +32,16 @@ export function registerCouponsCommands(program: Command): void {
             () => client.listCoupons(params),
             { format: globals.format }
           )
-          formatOutput(result.data, globals.format)
+          if (globals.format === "json") {
+            formatOutput(result.data, "json")
+          } else if (result.data.length === 0) {
+            console.log(
+              "\nNo coupons found. Create one with: blaze coupons create --code SUMMER20 --type percentage --value 20\n"
+            )
+          } else {
+            formatOutput(result.data, globals.format)
+            console.log(`\n${result.data.length} coupon(s) found.`)
+          }
         } catch (err) {
           handleError(err)
         }
@@ -73,6 +83,7 @@ export function registerCouponsCommands(program: Command): void {
       "Minimum order amount in minor units",
       parseInt
     )
+    .option("-y, --yes", "Skip confirmation prompt")
     .action(
       async (opts: {
         code: string
@@ -82,10 +93,54 @@ export function registerCouponsCommands(program: Command): void {
         maxRedemptions?: number
         expires?: string
         minimumAmount?: number
+        yes?: boolean
       }) => {
         try {
           const globals = getGlobalOpts(program)
           const client = await getClient(globals)
+
+          // Pre-checks
+          if (opts.type !== "percentage" && opts.type !== "fixed_amount") {
+            console.error(
+              "Error: --type must be 'percentage' or 'fixed_amount'"
+            )
+            process.exitCode = 1
+            return
+          }
+
+          if (
+            opts.type === "percentage" &&
+            (opts.value < 1 || opts.value > 100)
+          ) {
+            console.error("Error: Percentage value must be between 1 and 100")
+            process.exitCode = 1
+            return
+          }
+
+          if (opts.type === "fixed_amount" && !opts.currency) {
+            console.error(
+              "Error: --currency is required for fixed_amount discount type"
+            )
+            process.exitCode = 1
+            return
+          }
+
+          const discountLabel =
+            opts.type === "percentage"
+              ? `${opts.value}% off`
+              : `${opts.currency} ${(opts.value / 100).toFixed(2)} off`
+
+          if (!opts.yes && globals.format !== "json") {
+            let details = `Create coupon "${opts.code.toUpperCase()}" — ${discountLabel}`
+            if (opts.maxRedemptions)
+              details += ` (max ${opts.maxRedemptions} uses)`
+            if (opts.expires) details += ` (expires ${opts.expires})`
+            const confirmed = await confirm({ message: `${details}?` })
+            if (!confirmed) {
+              console.log("Cancelled.")
+              return
+            }
+          }
 
           const data: any = {
             code: opts.code,
@@ -103,7 +158,18 @@ export function registerCouponsCommands(program: Command): void {
             () => client.createCoupon(data),
             { format: globals.format }
           )
-          formatOutput(result, globals.format)
+
+          if (globals.format === "json") {
+            formatOutput(result, "json")
+          } else {
+            let msg = `\nYour "${result.code}" coupon has been created with ${discountLabel}`
+            if (result.max_redemptions)
+              msg += `, limited to ${result.max_redemptions} uses`
+            if (result.expires_at)
+              msg += `, expiring on ${new Date(result.expires_at).toLocaleDateString()}`
+            msg += ".\n"
+            console.log(msg)
+          }
         } catch (err) {
           handleError(err)
         }
@@ -140,7 +206,14 @@ export function registerCouponsCommands(program: Command): void {
             () => client.updateCoupon(id, data),
             { format: globals.format }
           )
-          formatOutput(result, globals.format)
+
+          if (globals.format === "json") {
+            formatOutput(result, "json")
+          } else {
+            console.log(
+              `\nYour "${result.code}" coupon has been updated successfully.\n`
+            )
+          }
         } catch (err) {
           handleError(err)
         }
@@ -150,16 +223,30 @@ export function registerCouponsCommands(program: Command): void {
   coupons
     .command("deactivate <id>")
     .description("Deactivate a coupon")
-    .action(async (id: string) => {
+    .option("-y, --yes", "Skip confirmation prompt")
+    .action(async (id: string, opts: { yes?: boolean }) => {
       try {
         const globals = getGlobalOpts(program)
         const client = await getClient(globals)
+
+        if (!opts.yes && globals.format !== "json") {
+          const confirmed = await confirm({
+            message: `Deactivate coupon ${id}? Customers will no longer be able to use it.`,
+          })
+          if (!confirmed) {
+            console.log("Cancelled.")
+            return
+          }
+        }
+
         await withSpinner(
           `Deactivating coupon ${id}…`,
           () => client.deactivateCoupon(id),
           { format: globals.format }
         )
-        console.log("Coupon deactivated successfully.")
+        console.log(
+          "\nYour coupon has been deactivated. Customers will no longer be able to use it.\n"
+        )
       } catch (err) {
         handleError(err)
       }
@@ -167,9 +254,13 @@ export function registerCouponsCommands(program: Command): void {
 
   coupons
     .command("validate")
-    .description("Validate a coupon code")
+    .description("Validate a coupon code against an amount")
     .requiredOption("--code <code>", "Coupon code to validate")
-    .requiredOption("--amount <n>", "Amount in minor units", parseInt)
+    .requiredOption(
+      "--amount <n>",
+      "Amount in minor units (e.g., 2999 = $29.99)",
+      parseInt
+    )
     .requiredOption("--currency <code>", "Currency code")
     .action(
       async (opts: { code: string; amount: number; currency: string }) => {
@@ -186,7 +277,27 @@ export function registerCouponsCommands(program: Command): void {
               }),
             { format: globals.format }
           )
-          formatOutput(result, globals.format)
+
+          if (globals.format === "json") {
+            formatOutput(result, "json")
+          } else if (result.valid && result.discount) {
+            const originalAmount = (opts.amount / 100).toFixed(2)
+            const discountAmount = (result.discount.amount_off / 100).toFixed(2)
+            const finalAmount = (result.discount.final_amount / 100).toFixed(2)
+            const discountLabel =
+              result.discount.type === "percentage"
+                ? `${result.discount.value}%`
+                : `${opts.currency} ${discountAmount}`
+
+            console.log(
+              `\nCoupon "${opts.code.toUpperCase()}" is valid. It gives ${discountLabel} off, saving you ${opts.currency} ${discountAmount} on a ${opts.currency} ${originalAmount} order. Your total would be ${opts.currency} ${finalAmount}.\n`
+            )
+          } else {
+            console.log(
+              `\nCoupon "${opts.code.toUpperCase()}" is not valid. ${result.error}.\n`
+            )
+            process.exitCode = 1
+          }
         } catch (err) {
           handleError(err)
         }

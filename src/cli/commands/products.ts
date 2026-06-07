@@ -1,4 +1,5 @@
 import { Command } from "commander"
+import { confirm } from "@inquirer/prompts"
 import { getClient, getGlobalOpts, handleError, withSpinner } from "../utils"
 import { formatOutput } from "../output"
 import * as fs from "fs"
@@ -33,7 +34,16 @@ export function registerProductsCommands(program: Command): void {
             () => client.listProducts(params),
             { format: globals.format }
           )
-          formatOutput(result.data, globals.format)
+          if (globals.format === "json") {
+            formatOutput(result.data, "json")
+          } else if (result.data.length === 0) {
+            console.log(
+              '\nNo products found. Create one with: blaze products create --name "..." --price 29.99\n'
+            )
+          } else {
+            formatOutput(result.data, globals.format)
+            console.log(`\n${result.data.length} product(s) found.`)
+          }
         } catch (err) {
           handleError(err)
         }
@@ -69,6 +79,7 @@ export function registerProductsCommands(program: Command): void {
     .option("--image-url <url>", "Image URL (alternative to --image)")
     .option("--recurring", "Mark as recurring product")
     .option("--interval <interval>", "Recurring interval: month, year, week")
+    .option("-y, --yes", "Skip confirmation prompt")
     .action(
       async (opts: {
         name: string
@@ -79,15 +90,36 @@ export function registerProductsCommands(program: Command): void {
         imageUrl?: string
         recurring?: boolean
         interval?: string
+        yes?: boolean
       }) => {
         try {
           const globals = getGlobalOpts(program)
           const client = await getClient(globals)
 
-          const data: any = {
-            name: opts.name,
-            price: opts.price,
+          const currency = opts.currency || "USD"
+
+          if (opts.recurring && !opts.interval) {
+            console.error(
+              "Error: --interval is required when --recurring is set (month, year, or week)"
+            )
+            process.exitCode = 1
+            return
           }
+
+          if (!opts.yes && globals.format !== "json") {
+            const desc = opts.recurring
+              ? ` (recurring ${opts.interval})`
+              : " (one-time)"
+            const confirmed = await confirm({
+              message: `Create product "${opts.name}" at ${currency} ${opts.price.toFixed(2)}${desc}?`,
+            })
+            if (!confirmed) {
+              console.log("Cancelled.")
+              return
+            }
+          }
+
+          const data: any = { name: opts.name, price: opts.price }
           if (opts.currency) data.currency = opts.currency
           if (opts.description) data.description = opts.description
           if (opts.recurring) data.is_recurring = true
@@ -95,6 +127,11 @@ export function registerProductsCommands(program: Command): void {
 
           if (opts.image) {
             const filePath = path.resolve(opts.image)
+            if (!fs.existsSync(filePath)) {
+              console.error(`Error: Image file not found: ${filePath}`)
+              process.exitCode = 1
+              return
+            }
             const fileBuffer = fs.readFileSync(filePath)
             data.image_base64 = fileBuffer.toString("base64")
             data.image_file_name = path.basename(filePath)
@@ -116,7 +153,17 @@ export function registerProductsCommands(program: Command): void {
             () => client.createProduct(data),
             { format: globals.format }
           )
-          formatOutput(result, globals.format)
+
+          if (globals.format === "json") {
+            formatOutput(result, "json")
+          } else {
+            const billing = result.is_recurring
+              ? ` with billing set to every ${result.recurring_interval}`
+              : ""
+            console.log(
+              `\nYour "${result.name}" product has been created at ${result.currency} ${Number(result.price).toFixed(2)}${billing}.\n`
+            )
+          }
         } catch (err) {
           handleError(err)
         }
@@ -157,6 +204,11 @@ export function registerProductsCommands(program: Command): void {
 
           if (opts.image) {
             const filePath = path.resolve(opts.image)
+            if (!fs.existsSync(filePath)) {
+              console.error(`Error: Image file not found: ${filePath}`)
+              process.exitCode = 1
+              return
+            }
             const fileBuffer = fs.readFileSync(filePath)
             data.image_base64 = fileBuffer.toString("base64")
             data.image_file_name = path.basename(filePath)
@@ -176,7 +228,14 @@ export function registerProductsCommands(program: Command): void {
             () => client.updateProduct(id, data),
             { format: globals.format }
           )
-          formatOutput(result, globals.format)
+
+          if (globals.format === "json") {
+            formatOutput(result, "json")
+          } else {
+            console.log(
+              `\nYour "${result.name}" product has been updated successfully.\n`
+            )
+          }
         } catch (err) {
           handleError(err)
         }
@@ -185,17 +244,31 @@ export function registerProductsCommands(program: Command): void {
 
   products
     .command("archive <id>")
-    .description("Archive a product")
-    .action(async (id: string) => {
+    .description("Archive a product (soft delete)")
+    .option("-y, --yes", "Skip confirmation prompt")
+    .action(async (id: string, opts: { yes?: boolean }) => {
       try {
         const globals = getGlobalOpts(program)
         const client = await getClient(globals)
+
+        if (!opts.yes && globals.format !== "json") {
+          const confirmed = await confirm({
+            message: `Archive product ${id}? (Existing payment links will still work)`,
+          })
+          if (!confirmed) {
+            console.log("Cancelled.")
+            return
+          }
+        }
+
         await withSpinner(
           `Archiving product ${id}…`,
           () => client.archiveProduct(id),
           { format: globals.format }
         )
-        console.log("Product archived successfully.")
+        console.log(
+          "\nYour product has been archived. Existing payment links will continue to work.\n"
+        )
       } catch (err) {
         handleError(err)
       }
