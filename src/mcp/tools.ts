@@ -1216,4 +1216,22 @@ export function registerTools(server: McpServer, client: BlazeClient): void {
       }
     }
   )
+
+  // ============================================
+  // Bank Reconciliation (AI CFO Tool 3) — tool 78
+  // ============================================
+
+  // 78. Bank Reconciliation
+  server.tool(
+    "blaze_cfo_reconcile",
+    "Reconcile Plaid bank transactions against internal payment records for a given period. Returns matched pairs, unmatched bank transactions, unmatched internal records, low-confidence matches, amount discrepancies, and the overall reconciliation rate. Amounts are in integer minor units (cents). Use when the user asks to reconcile their bank account, match bank transactions to records, or find missing/unrecorded transactions.",
+    schemas.bankReconciliationSchema.shape,
+    async params => {
+      try {
+        return jsonResult(await client.reconcileBankAccounts(params))
+      } catch (err) {
+        return errorResult(err)
+      }
+    }
+  )
 }

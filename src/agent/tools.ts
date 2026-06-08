@@ -1020,6 +1020,46 @@ const toolDefs: ToolDef[] = [
   },
 
   // -------------------------------------------------------------------------
+  // Bank Reconciliation (AI CFO Tool 3)
+  // -------------------------------------------------------------------------
+  {
+    schema: {
+      name: "blaze_cfo_reconcile",
+      description:
+        'Reconcile Plaid bank transactions against internal payment records for a period. Returns matched pairs, unmatched bank/internal items, discrepancies, and the reconciliation rate. READ-ONLY. Use to answer "reconcile my bank account", "match my transactions", or "what transactions are missing from my records".',
+      input_schema: props(["period_start", "period_end"], {
+        period_start: {
+          type: "string",
+          description:
+            "Start of the reconciliation period (ISO 8601, e.g. 2025-01-01)",
+        },
+        period_end: {
+          type: "string",
+          description:
+            "End of the reconciliation period (ISO 8601, e.g. 2025-01-31)",
+        },
+        account_id: {
+          type: "string",
+          description:
+            "Specific bank account ID to reconcile (default: all accounts)",
+        },
+      }),
+    },
+    execute: async (input, client) => {
+      const i = input as {
+        period_start: string
+        period_end: string
+        account_id?: string
+      }
+      return client.reconcileBankAccounts({
+        period_start: i.period_start,
+        period_end: i.period_end,
+        account_id: i.account_id,
+      })
+    },
+  },
+
+  // -------------------------------------------------------------------------
   // Accounting (QuickBooks / Xero integration)
   // -------------------------------------------------------------------------
   {

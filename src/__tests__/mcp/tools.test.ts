@@ -106,6 +106,60 @@ describe("registerTools — MCP tool registry", () => {
     expect(result.content[0].text).toContain("boom")
   })
 
+  it("registers the blaze_cfo_reconcile tool", () => {
+    const reconcile = tools.find(t => t.name === "blaze_cfo_reconcile")
+    expect(reconcile).toBeDefined()
+    expect(reconcile?.description).toContain("Reconcile")
+  })
+
+  it("routes blaze_cfo_reconcile to client.reconcileBankAccounts with the params", async () => {
+    const reconcile = tools.find(t => t.name === "blaze_cfo_reconcile")!
+
+    const result = await reconcile.handler({
+      period_start: "2025-01-01",
+      period_end: "2025-01-31",
+    })
+
+    expect(
+      (client as unknown as { reconcileBankAccounts: jest.Mock })
+        .reconcileBankAccounts
+    ).toHaveBeenCalledWith({
+      period_start: "2025-01-01",
+      period_end: "2025-01-31",
+    })
+    expect(result.isError).toBeUndefined()
+    expect(result.content[0].type).toBe("text")
+  })
+
+  it("serializes the reconcile result as pretty JSON text", async () => {
+    const reconcile = tools.find(t => t.name === "blaze_cfo_reconcile")!
+
+    const result = await reconcile.handler({
+      period_start: "2025-01-01",
+      period_end: "2025-01-31",
+    })
+
+    expect(JSON.parse(result.content[0].text)).toEqual({
+      ok: true,
+      method: "reconcileBankAccounts",
+    })
+  })
+
+  it("returns an isError result when reconcile client throws", async () => {
+    const reconcile = tools.find(t => t.name === "blaze_cfo_reconcile")!
+    ;(
+      client as unknown as { reconcileBankAccounts: jest.Mock }
+    ).reconcileBankAccounts.mockRejectedValueOnce(new Error("boom"))
+
+    const result = await reconcile.handler({
+      period_start: "2025-01-01",
+      period_end: "2025-01-31",
+    })
+
+    expect(result.isError).toBe(true)
+    expect(result.content[0].text).toContain("boom")
+  })
+
   it("registers a non-trivial set of tools with unique names", () => {
     const names = tools.map(t => t.name)
     expect(names.length).toBeGreaterThan(40)

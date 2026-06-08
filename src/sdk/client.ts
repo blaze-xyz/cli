@@ -73,6 +73,8 @@ import type {
   DuplicateCheckParams,
   DuplicateCheckResult,
   CashFlowForecast,
+  BankReconciliationParams,
+  ReconciliationResult,
   Product,
   CreateProductInput,
   UpdateProductInput,
@@ -920,6 +922,21 @@ export class BlazeClient {
       "POST",
       "/v1/cfo/cash-flow-forecast",
       { horizon_days: params.horizon_days ?? 90 }
+    )
+  }
+
+  // Bank Reconciliation (AI CFO Tool 3)
+  async reconcileBankAccounts(
+    params: BankReconciliationParams
+  ): Promise<ReconciliationResult> {
+    return this.request<ReconciliationResult>(
+      "POST",
+      "/v1/cfo/bank-reconciliation",
+      {
+        period_start: params.period_start,
+        period_end: params.period_end,
+        ...(params.account_id ? { account_id: params.account_id } : {}),
+      }
     )
   }
 

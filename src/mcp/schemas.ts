@@ -673,3 +673,17 @@ export const cashFlowForecastSchema = z.object({
     .optional()
     .describe("Number of days to project forward (default: 90)"),
 })
+
+// Bank Reconciliation (AI CFO Tool 3)
+export const bankReconciliationSchema = z.object({
+  period_start: z
+    .string()
+    .describe("Start of the reconciliation period (ISO 8601, e.g. 2025-01-01)"),
+  period_end: z
+    .string()
+    .describe("End of the reconciliation period (ISO 8601, e.g. 2025-01-31)"),
+  account_id: z
+    .string()
+    .optional()
+    .describe("Specific bank account ID to reconcile (default: all accounts)"),
+})

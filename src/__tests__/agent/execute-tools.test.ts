@@ -96,6 +96,10 @@ const TOOL_INPUTS: Record<string, Record<string, unknown>> = {
   blaze_cfo_duplicates: { window_days: 30 },
   blaze_cfo_check_duplicate: { vendor_name: "Acme", amount_cents: 10000 },
   blaze_cfo_forecast: { horizon_days: 30 },
+  blaze_cfo_reconcile: {
+    period_start: "2026-01-01",
+    period_end: "2026-01-31",
+  },
   blaze_get_profit_and_loss: {
     start_date: "2026-01-01",
     end_date: "2026-06-30",

@@ -776,6 +776,60 @@ export interface CashFlowForecast {
   currency: string
 }
 
+// Bank Reconciliation (AI CFO Tool 2)
+export interface BankReconciliationParams {
+  period_start: string
+  period_end: string
+  account_id?: string
+}
+
+export interface ReconciliationMatch {
+  plaidTransactionId: string
+  internalRecordId: string
+  amountMinorUnits: number
+  date: string
+  confidence: number
+  description: string
+}
+
+export interface ReconciliationBankTransaction {
+  plaidTransactionId: string
+  amountMinorUnits: number
+  date: string
+  description: string
+}
+
+export interface ReconciliationInternalRecord {
+  internalRecordId: string
+  amountMinorUnits: number
+  date: string
+  description: string
+}
+
+export interface ReconciliationDiscrepancy {
+  plaidTransactionId: string
+  internalRecordId: string
+  expectedAmountMinorUnits: number
+  actualAmountMinorUnits: number
+  differenceMinorUnits: number
+  description: string
+}
+
+export interface ReconciliationResult {
+  period: {
+    start: string
+    end: string
+  }
+  matched: ReconciliationMatch[]
+  unmatchedBank: ReconciliationBankTransaction[]
+  unmatchedInternal: ReconciliationInternalRecord[]
+  lowConfidenceMatches: ReconciliationMatch[]
+  discrepancies: ReconciliationDiscrepancy[]
+  reconciliationRate: number
+  totalPlaidTransactions: number
+  totalInternalRecords: number
+}
+
 // ============================================
 // Products
 // ============================================
