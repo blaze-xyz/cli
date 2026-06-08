@@ -102,6 +102,13 @@ const TOOL_INPUTS: Record<string, Record<string, unknown>> = {
   },
   blaze_get_balance_sheet: { as_of: "2026-06-01" },
   blaze_get_chart_of_accounts: {},
+  blaze_list_voice_calls: { limit: 5 },
+  blaze_propose_voice_call: {
+    customer_id: "cust_1",
+    invoice_id: "inv_1",
+    reason: "overdue",
+  },
+  blaze_schedule_voice_call: { job_id: "job_1", execute: false },
   blaze_sync_transaction_to_accounting: {
     date: "2026-06-01",
     confirm: true,
