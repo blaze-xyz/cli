@@ -674,6 +674,19 @@ export const cashFlowForecastSchema = z.object({
     .describe("Number of days to project forward (default: 90)"),
 })
 
+// Payroll Intelligence (AI CFO Tool 8)
+export const payrollAnalysisSchema = z.object({
+  window_days: z
+    .number()
+    .int()
+    .min(30)
+    .max(365)
+    .optional()
+    .describe(
+      "Number of days to look back for payroll patterns (default: 180)"
+    ),
+})
+
 // Scenario Modeling (AI CFO Tool 4)
 export const scenarioAdjustmentSchema = z.object({
   type: z

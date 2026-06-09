@@ -1217,11 +1217,25 @@ export function registerTools(server: McpServer, client: BlazeClient): void {
     }
   )
 
+  // 78. Payroll Intelligence
+  server.tool(
+    "blaze_cfo_payroll",
+    "Analyze payroll patterns from linked bank accounts. Detects payroll providers (Gusto, ADP, Rippling, etc.), infers pay frequency, estimates monthly cost and headcount, detects contractor payments that may need 1099 reporting, and predicts next pay date. Use when the user asks about payroll, employees, headcount, contractors, or 1099s.",
+    schemas.payrollAnalysisSchema.shape,
+    async params => {
+      try {
+        return jsonResult(await client.getPayrollAnalysis(params))
+      } catch (err) {
+        return errorResult(err)
+      }
+    }
+  )
+
   // ============================================
-  // Scenario Modeling (AI CFO Tool 4) — tool 78
+  // Scenario Modeling (AI CFO Tool 4) — tool 79
   // ============================================
 
-  // 78. Scenario Modeling
+  // 79. Scenario Modeling
   server.tool(
     "blaze_cfo_scenario",
     "Model a 'what if' financial scenario by applying adjustments to the cash flow forecast baseline. Supports hiring (new recurring expense), losing a client (revenue decrease), large purchases (one-time cost), new revenue streams (one-time or recurring income), and delayed receivables. Returns monthly projections with runway, break-even date, and a comparison to the unadjusted baseline (runway delta, burn delta, ending-balance delta). READ-ONLY. Amounts are in integer minor units (cents). Use when the user asks 'what if' questions about hiring, revenue changes, big purchases, or runway impact.",
@@ -1236,10 +1250,10 @@ export function registerTools(server: McpServer, client: BlazeClient): void {
   )
 
   // ============================================
-  // Bank Reconciliation (AI CFO Tool 3) — tool 79
+  // Bank Reconciliation (AI CFO Tool 3) — tool 80
   // ============================================
 
-  // 79. Bank Reconciliation
+  // 80. Bank Reconciliation
   server.tool(
     "blaze_cfo_reconcile",
     "Reconcile Plaid bank transactions against internal payment records for a given period. Returns matched pairs, unmatched bank transactions, unmatched internal records, low-confidence matches, amount discrepancies, and the overall reconciliation rate. Amounts are in integer minor units (cents). Use when the user asks to reconcile their bank account, match bank transactions to records, or find missing/unrecorded transactions.",

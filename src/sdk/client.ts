@@ -927,6 +927,11 @@ export class BlazeClient {
     )
   }
 
+  // Payroll Intelligence (AI CFO Tool 8)
+  async getPayrollAnalysis(params?: { window_days?: number }): Promise<any> {
+    return this.request<any>("GET", `/v1/cfo/payroll${this.buildQuery(params)}`)
+  }
+
   // Scenario Modeling (AI CFO Tool 4)
   async modelScenario(params: {
     name: string

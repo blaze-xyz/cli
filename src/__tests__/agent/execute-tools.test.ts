@@ -132,6 +132,7 @@ const TOOL_INPUTS: Record<string, Record<string, unknown>> = {
       { account_id: "a2", amount: "100.00", type: "credit" },
     ],
   },
+  blaze_cfo_payroll: { window_days: 180 },
 }
 
 describe("agent buildTools", () => {

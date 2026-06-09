@@ -1021,6 +1021,28 @@ const toolDefs: ToolDef[] = [
   },
 
   // -------------------------------------------------------------------------
+  // Payroll Intelligence (AI CFO Tool 8)
+  // -------------------------------------------------------------------------
+  {
+    schema: {
+      name: "blaze_cfo_payroll",
+      description:
+        "Analyze payroll patterns from linked bank accounts. Detects providers (Gusto, ADP, Rippling, etc.), pay frequency, monthly cost, headcount estimate, and contractor payments needing 1099 reporting. READ-ONLY.",
+      input_schema: props([], {
+        window_days: {
+          type: "number",
+          description:
+            "Number of days to look back for payroll patterns (default: 180, max: 365)",
+        },
+      }),
+    },
+    execute: async (input, client) => {
+      const i = input as { window_days?: number }
+      return client.getPayrollAnalysis({ window_days: i.window_days })
+    },
+  },
+
+  // -------------------------------------------------------------------------
   // Scenario Modeling (AI CFO Tool 4)
   // -------------------------------------------------------------------------
   {
