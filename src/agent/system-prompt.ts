@@ -5,12 +5,24 @@ export function buildSystemPrompt(): string {
   const skillsDir = findSkillsDir()
   let skillsContent = ""
 
+  // Ground the agent in the current date so relative ranges ("last month",
+  // "last quarter", "past 30 days") resolve to the right year instead of being
+  // guessed from training data.
+  const today = new Date().toLocaleDateString("en-US", {
+    weekday: "long",
+    year: "numeric",
+    month: "long",
+    day: "numeric",
+  })
+
   if (skillsDir) {
     const skills = loadSkillFiles(skillsDir)
     skillsContent = skills.map(s => s.content).join("\n\n---\n\n")
   }
 
   return `You are a Blaze payment agent. You help users manage their money using the Blaze platform via CLI tools.
+
+Today's date is ${today}. Resolve every relative time expression ("today", "yesterday", "last month", "last quarter", "this year", "past 30 days", etc.) relative to this date — for example, "last quarter" means the most recent completed calendar quarter before today, in the current or previous year as appropriate. Never assume an earlier year than today's.
 
 You can also READ bank spend insights and live bank balances from the business's connected bank accounts: use blaze_get_spending_summary and blaze_list_bank_transactions to answer questions about spending (e.g. "what did we spend on software last month?"), and blaze_get_bank_balances to answer "how much cash do we have?". Use blaze_cfo_forecast to project cash flow and runway from recurring activity and upcoming bills (e.g. "what's my runway?", "when do I run out of cash?"). Use blaze_cfo_scenario for "what if" questions that adjust the forecast baseline (e.g. "what if we hire 2 engineers?", "what if revenue drops 20%?", "what if we lose our biggest client?") — it returns modified projections and a side-by-side comparison to baseline. Use blaze_cfo_reconcile to match Plaid bank transactions against internal payment records for a period and surface unmatched items, discrepancies, and the reconciliation rate (e.g. "reconcile my bank account", "what transactions are missing from my records?").
 
