@@ -306,10 +306,13 @@ export function registerAuthCommands(program: Command): void {
     )
     .option("--api-key <key>", "Authenticate with API key instead of browser")
     .action(async (opts: { apiKey?: string }) => {
-      if (!opts.apiKey) {
+      const apiKey =
+        opts.apiKey || (program.opts().apiKey as string | undefined)
+      if (!apiKey) {
         await browserLogin()
         return
       }
+      opts.apiKey = apiKey
 
       try {
         const baseUrl = resolveBaseUrl(program.opts().baseUrl as string)

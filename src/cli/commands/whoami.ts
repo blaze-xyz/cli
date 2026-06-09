@@ -23,7 +23,10 @@ export function registerWhoamiCommands(program: Command): void {
 
       const auth = await getAuth()
       const isBearerActive =
-        auth !== null && Date.now() < auth.created_at + auth.expires_in * 1000
+        !!auth &&
+        !!auth.created_at &&
+        !!auth.expires_in &&
+        Date.now() < auth.created_at + auth.expires_in * 1000
       const explicitApiKey = resolveApiKey()
       const configApiKey = resolveConfigApiKey()
       const apiBaseUrl = resolveBaseUrl()
@@ -84,33 +87,53 @@ export function registerWhoamiCommands(program: Command): void {
         )
       }
 
-      // Active business
-      if (activeBusinessId) {
-        let businessLabel = `${activeBusinessId}`
+      // Active business — resolve from API
+      // Try /v1/me/businesses first; if it fails (e.g. API key auth on consumer-only controller),
+      // fall back to /v1/team-members to infer business context
+      let businessLabel: string | null = null
+      try {
+        const client = await getClient({})
+        let businesses: Array<{ id: string; name: string; role: string }> = []
         try {
-          const client = await getClient({})
           const result = await client.get<{
             object: string
             data: Array<{ id: string; name: string; role: string }>
           }>("/v1/me/businesses")
-          const match = result.data.find(b => b.id === activeBusinessId)
-          if (match) {
-            businessLabel = `${chalk.green(`${match.name} (${match.role})`)} — ${activeBusinessId}`
-          } else {
-            businessLabel = `${chalk.green(activeBusinessId)} ${chalk.yellow("(not found in your businesses)")}`
-          }
-        } catch (err) {
-          businessLabel = `${chalk.green(activeBusinessId)} ${chalk.dim("(could not fetch business details)")}`
-          if (process.env.DEBUG) {
-            console.error(
-              chalk.dim(
-                `[debug] Failed to fetch businesses: ${
-                  err instanceof Error ? err.message : String(err)
-                }`
-              )
-            )
+          businesses = result.data
+        } catch {
+          // /v1/me/businesses may reject API key auth — try team-members as fallback
+          const teamResult = await client.get<{
+            object: string
+            data: Array<{ id: string; role: string; email: string | null }>
+          }>("/v1/team-members")
+          if (teamResult.data.length > 0) {
+            const self = teamResult.data[0]
+            businesses = [
+              {
+                id: "(resolved from API key)",
+                name: "Business",
+                role: self.role,
+              },
+            ]
           }
         }
+        if (businesses.length > 0) {
+          const target = activeBusinessId
+            ? businesses.find(b => b.id === activeBusinessId)
+            : businesses[0]
+          if (target) {
+            businessLabel = `${chalk.green(`${target.name} (${target.role})`)} — ${target.id}`
+          } else if (activeBusinessId) {
+            businessLabel = `${chalk.green(activeBusinessId)} ${chalk.yellow("(not found in your businesses)")}`
+          }
+        }
+      } catch {
+        if (activeBusinessId) {
+          businessLabel = `${chalk.green(activeBusinessId)} ${chalk.dim("(could not fetch business details)")}`
+        }
+      }
+
+      if (businessLabel) {
         console.log(formatRow("Active business:", businessLabel))
       } else {
         console.log(
