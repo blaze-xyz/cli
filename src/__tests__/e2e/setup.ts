@@ -18,6 +18,18 @@ export class TestContext {
     this.client = new BlazeClient({ apiKey, baseUrl })
   }
 
+  /**
+   * Consumer (bearer-token) client for P2P / consumer-scoped flows. Gated by
+   * SKIP_CONSUMER_E2E (BLAZE_TEST_JWT). Lets consumer-context cases run under the
+   * correct auth instead of a business API key (which 401/403s on /v1/users etc).
+   */
+  consumerClient(): BlazeClient {
+    const jwt = process.env.BLAZE_TEST_JWT
+    if (!jwt) throw new Error("BLAZE_TEST_JWT not set")
+    const baseUrl = process.env.BLAZE_TEST_BASE_URL ?? "https://api.blaze.money"
+    return new BlazeClient({ bearerToken: jwt, baseUrl })
+  }
+
   track(type: string, id: string, parentId?: string) {
     this.createdResources.push({ type, id, parentId })
   }

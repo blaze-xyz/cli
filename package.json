@@ -54,6 +54,10 @@
     "test:e2e": "jest --config jest.e2e.config.ts",
     "test:coverage": "jest --config jest.config.ts --coverage",
     "test:integration": "jest --config jest.e2e.config.ts --runInBand",
+    "eval:agent": "ts-node eval/run-eval.ts",
+    "eval:agent:staging": "ts-node eval/run-eval.ts --staging",
+    "eval:agent:consumer": "ts-node eval/run-eval.ts --consumer-only",
+    "eval:agent:compare": "ts-node eval/compare.ts",
     "lint": "eslint src --ext .ts",
     "prepublishOnly": "npm run build"
   },

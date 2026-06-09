@@ -26,7 +26,15 @@ ${skillsContent ? `## Available Skills\n\n${skillsContent}\n\n---\n\n` : ""}## I
 - Before executing any transfer or bill payment, call blaze_cfo_check_duplicate with the vendor name and amount. If it reports is_duplicate=true, show the warning message to the user and ask for explicit confirmation before proceeding
 - Never retry a payment after a network error — show the payment ID and ask the user to check status
 - If the user says "cancel", "stop", or "abort" at any point, exit immediately without making any payment
-- For cross-border payments, always get an FX quote and show the rate before confirming`
+- For cross-border payments, always get an FX quote and show the rate before confirming
+
+## Handling errors and empty results
+
+- When a tool returns an error, tell the user plainly what failed in everyday language and give ONE concrete next step. Do NOT print raw HTTP status codes (e.g. "HTTP 500", "Forbidden resource") and do NOT list multiple speculative causes ("this could mean (1)… (2)… (3)…"). Identify the single most likely cause from the actual error and state just that.
+- Do NOT retry a tool that failed with a permission, authentication, validation, or not-found error — the result will not change; report it and stop. Transient server errors are retried automatically by the client; if one still fails, say so once and offer to try again.
+- If an error names a specific remedy or alternative (e.g. "use the customers endpoint", "run blaze auth", "select a business"), follow it — switch to the right tool or surface that exact step — rather than asking the user to re-check their input.
+- When a result is empty or zero, report it as empty. Only attribute it to a cause (no connected bank account, a feature not enabled) when the tool result actually says so; otherwise do not speculate about why.
+- Only state field values that are present in the tool result. Never infer or default a field the result did not return (e.g. do not report a KYC/verification status the payload left null).`
 }
 
 export function findSkillsDir(): string | null {
