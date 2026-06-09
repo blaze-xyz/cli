@@ -1,5 +1,6 @@
 import type Anthropic from "@anthropic-ai/sdk"
 import type { BlazeClient } from "../sdk/client"
+import type { ScenarioAdjustment } from "../sdk/types"
 import type { MemoryStore } from "./memory"
 import { USD_RATES, estimateUsdAmount } from "../constants/fx-rates"
 
@@ -1016,6 +1017,80 @@ const toolDefs: ToolDef[] = [
     execute: async (input, client) => {
       const i = input as { horizon_days?: number }
       return client.getCashFlowForecast({ horizon_days: i.horizon_days ?? 90 })
+    },
+  },
+
+  // -------------------------------------------------------------------------
+  // Scenario Modeling (AI CFO Tool 4)
+  // -------------------------------------------------------------------------
+  {
+    schema: {
+      name: "blaze_cfo_scenario",
+      description:
+        'Model a "what if" financial scenario by applying adjustments (hiring, revenue change, big purchase, delayed receivable) to the cash flow forecast baseline. Returns monthly projections, runway, break-even date, and a comparison to baseline. READ-ONLY. Use to answer "what if we hire 2 engineers / revenue drops 20% / we lose our biggest client".',
+      input_schema: {
+        type: "object",
+        properties: {
+          name: {
+            type: "string",
+            description: "A descriptive name for this scenario",
+          },
+          adjustments: {
+            type: "array",
+            description:
+              "List of adjustments to apply to the baseline forecast",
+            items: {
+              type: "object",
+              properties: {
+                type: {
+                  type: "string",
+                  enum: [
+                    "revenue_change_percent",
+                    "new_recurring_expense",
+                    "remove_recurring_expense",
+                    "one_time_cost",
+                    "one_time_income",
+                    "delay_receivable",
+                  ],
+                },
+                percentage: { type: "number" },
+                amount_cents: { type: "number" },
+                frequency: {
+                  type: "string",
+                  enum: [
+                    "weekly",
+                    "biweekly",
+                    "monthly",
+                    "quarterly",
+                    "one_time",
+                  ],
+                },
+                start_date: { type: "string" },
+                end_date: { type: "string" },
+                description: { type: "string" },
+              },
+              required: ["type"],
+            },
+          },
+          horizon_days: {
+            type: "number",
+            description: "Number of days to project forward (default: 90)",
+          },
+        },
+        required: ["name", "adjustments"],
+      },
+    },
+    execute: async (input, client) => {
+      const i = input as {
+        name: string
+        adjustments: ScenarioAdjustment[]
+        horizon_days?: number
+      }
+      return client.modelScenario({
+        name: i.name,
+        adjustments: i.adjustments ?? [],
+        horizon_days: i.horizon_days ?? 90,
+      })
     },
   },
 

@@ -776,6 +776,43 @@ export interface CashFlowForecast {
   currency: string
 }
 
+// Scenario Modeling (AI CFO Tool 4)
+export interface ScenarioAdjustment {
+  type:
+    | "revenue_change_percent"
+    | "new_recurring_expense"
+    | "remove_recurring_expense"
+    | "one_time_cost"
+    | "one_time_income"
+    | "delay_receivable"
+  percentage?: number
+  amount_cents?: number
+  frequency?: "weekly" | "biweekly" | "monthly" | "quarterly" | "one_time"
+  start_date?: string
+  end_date?: string
+  description?: string
+}
+
+export interface MonthlyProjection {
+  month: string
+  projectedRevenueCents: number
+  projectedExpensesCents: number
+  netCents: number
+  endingBalanceCents: number
+}
+
+export interface ScenarioResult {
+  name: string
+  monthlyProjections: MonthlyProjection[]
+  runwayMonths: number | null
+  breakEvenDate: string | null
+  comparisonToBaseline: {
+    runwayDiffMonths: number
+    monthlyBurnDiffCents: number
+    endingBalanceDiffCents: number
+  }
+}
+
 // Bank Reconciliation (AI CFO Tool 2)
 export interface BankReconciliationParams {
   period_start: string

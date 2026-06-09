@@ -73,6 +73,8 @@ import type {
   DuplicateCheckParams,
   DuplicateCheckResult,
   CashFlowForecast,
+  ScenarioAdjustment,
+  ScenarioResult,
   BankReconciliationParams,
   ReconciliationResult,
   Product,
@@ -923,6 +925,19 @@ export class BlazeClient {
       "/v1/cfo/cash-flow-forecast",
       { horizon_days: params.horizon_days ?? 90 }
     )
+  }
+
+  // Scenario Modeling (AI CFO Tool 4)
+  async modelScenario(params: {
+    name: string
+    adjustments: ScenarioAdjustment[]
+    horizon_days?: number
+  }): Promise<ScenarioResult> {
+    return this.request<ScenarioResult>("POST", "/v1/cfo/scenario", {
+      name: params.name,
+      adjustments: params.adjustments,
+      horizon_days: params.horizon_days ?? 90,
+    })
   }
 
   // Bank Reconciliation (AI CFO Tool 3)

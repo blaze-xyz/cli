@@ -674,6 +674,66 @@ export const cashFlowForecastSchema = z.object({
     .describe("Number of days to project forward (default: 90)"),
 })
 
+// Scenario Modeling (AI CFO Tool 4)
+export const scenarioAdjustmentSchema = z.object({
+  type: z
+    .enum([
+      "revenue_change_percent",
+      "new_recurring_expense",
+      "remove_recurring_expense",
+      "one_time_cost",
+      "one_time_income",
+      "delay_receivable",
+    ])
+    .describe("The type of adjustment to apply"),
+  percentage: z
+    .number()
+    .optional()
+    .describe(
+      "Percentage change for revenue_change_percent (e.g. -20 for 20% decrease, 15 for 15% increase)"
+    ),
+  amount_cents: z
+    .number()
+    .optional()
+    .describe(
+      "Amount in cents for expense/income adjustments. For delay_receivable, this is the number of days to delay."
+    ),
+  frequency: z
+    .enum(["weekly", "biweekly", "monthly", "quarterly", "one_time"])
+    .optional()
+    .describe("How often the recurring adjustment applies (default: monthly)"),
+  start_date: z
+    .string()
+    .optional()
+    .describe("ISO date when the adjustment starts (default: today)"),
+  end_date: z
+    .string()
+    .optional()
+    .describe("ISO date when the adjustment ends (default: end of horizon)"),
+  description: z
+    .string()
+    .optional()
+    .describe("Human-readable description of this adjustment"),
+})
+
+export const scenarioModelingSchema = z.object({
+  name: z
+    .string()
+    .describe(
+      "A descriptive name for this scenario (e.g. 'Hire 2 engineers' or 'Lose biggest client')"
+    ),
+  adjustments: z
+    .array(scenarioAdjustmentSchema)
+    .describe("List of adjustments to apply to the baseline forecast"),
+  horizon_days: z
+    .number()
+    .int()
+    .min(1)
+    .max(365)
+    .optional()
+    .describe("Number of days to project forward (default: 90)"),
+})
+
 // Bank Reconciliation (AI CFO Tool 3)
 export const bankReconciliationSchema = z.object({
   period_start: z
