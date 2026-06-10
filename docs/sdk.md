@@ -384,7 +384,7 @@ createTransfer(data: CreateTransferInput): Promise<Transfer>
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
-| `amount` | `number` | Yes | Transfer amount |
+| `amount` | `number` | Yes | Transfer amount in major units (e.g. `10` = $10.00) |
 | `currency` | `Currency` | No | Currency code. Defaults to `USD` |
 | `customer_id` | `string` | No | Customer ID |
 | `source_type` | `TransferSourceType` | No | Source type |
@@ -484,7 +484,7 @@ createWithdrawal(data: CreateWithdrawalInput): Promise<Withdrawal>
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
 | `external_account_id` | `string` | Yes | External account ID to withdraw to |
-| `amount` | `number` | Yes | Withdrawal amount |
+| `amount` | `number` | Yes | Withdrawal amount in major units (e.g. `10` = $10.00) |
 | `currency` | `Currency` | No | Currency code. Defaults to `USD` |
 | `note` | `string` | No | Withdrawal note or memo |
 | `metadata` | `Record<string, string>` | No | Arbitrary key-value metadata |
@@ -571,7 +571,7 @@ createPaymentLink(data: CreatePaymentLinkInput): Promise<PaymentLink>
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
-| `amount` | `number` | Yes | Payment amount |
+| `amount` | `number` | Yes | Payment amount in major units (e.g. `10` = $10.00) |
 | `currency` | `Currency` | No | Currency code. Defaults to `USD` |
 | `name` | `string` | No | Display name for the payment link |
 | `note` | `string` | No | Note or description |
@@ -1809,7 +1809,7 @@ createFxQuote(data: { from_currency: string; to_currency: string; amount: number
 |-----------|------|----------|-------------|
 | `from_currency` | `string` | Yes | Source currency code |
 | `to_currency` | `string` | Yes | Target currency code |
-| `amount` | `number` | Yes | Amount in source currency |
+| `amount` | `number` | Yes | Amount in source currency, in major units (e.g. `1000` = 1000 USD) |
 
 **Response shape:**
 

@@ -231,7 +231,7 @@ blaze transfers create --amount N [--currency CODE] [--customer-id ID] [--destin
 
 | Flag | Required | Description |
 |------|----------|-------------|
-| `--amount N` | Yes | Transfer amount |
+| `--amount N` | Yes | Transfer amount in major units (e.g. `10` = $10.00) |
 | `--currency CODE` | No | Currency code (defaults to `USD`) |
 | `--customer-id ID` | No | Customer ID |
 | `--destination-type TYPE` | No | `wallet`, `external_account`, `virtual_account`, or `payment_link` |
@@ -276,7 +276,7 @@ blaze withdrawals create --external-account-id <id> --amount N [--currency CODE]
 | Flag | Required | Description |
 |------|----------|-------------|
 | `--external-account-id <id>` | Yes | External account to withdraw to |
-| `--amount N` | Yes | Withdrawal amount |
+| `--amount N` | Yes | Withdrawal amount in major units (e.g. `10` = $10.00) |
 | `--currency CODE` | No | Currency code (defaults to `USD`) |
 | `--note TEXT` | No | Withdrawal note |
 
@@ -317,7 +317,7 @@ blaze payment-links create --amount N [--currency CODE] [--name TEXT] [--note TE
 
 | Flag | Required | Description |
 |------|----------|-------------|
-| `--amount N` | Yes | Payment amount |
+| `--amount N` | Yes | Payment amount in major units (e.g. `10` = $10.00) |
 | `--currency CODE` | No | Currency code (defaults to `USD`) |
 | `--name TEXT` | No | Display name |
 | `--note TEXT` | No | Note or description |
@@ -958,7 +958,7 @@ blaze fx quote --from <currency> --to <currency> --amount <n>
 |------|----------|-------------|
 | `--from <currency>` | Yes | Source currency code |
 | `--to <currency>` | Yes | Target currency code |
-| `--amount <n>` | Yes | Amount in source currency |
+| `--amount <n>` | Yes | Amount in source currency, in major units (e.g. `1000` = 1000 USD) |
 
 **Example:**
 
@@ -1085,7 +1085,7 @@ blaze send "Alex Rivera" --amount 25 --note "Coffee"
 | Flag | Required | Description |
 |---|---|---|
 | `<recipient>` | Yes | Positional. Blazetag like `@alex` or a name to fuzzy-search |
-| `--amount <n>` | Yes | Amount to send |
+| `--amount <n>` | Yes | Amount to send in major units (e.g. `25` = $25.00) |
 | `--currency <code>` | No | Three-letter currency code (default `USD`). Non-USD/USDC routes through an FX quote first |
 | `--note <text>` | No | Optional payment note |
 | `-y`, `--yes` | No | Skip the confirmation prompt |
@@ -1143,7 +1143,7 @@ blaze contacts pay "Acme Supplies" --amount 250.00
 | Flag | Required | Description |
 |---|---|---|
 | `<nameOrId>` | Yes | Contact name (fuzzy search) or CUID |
-| `--amount <n>` | Yes | Amount to send |
+| `--amount <n>` | Yes | Amount to send in major units (e.g. `250` = $250.00) |
 | `--currency <code>` | No | Defaults to the bank account's currency |
 | `--bank-account-id <id>` | No | Pick a specific account (prompts if multiple and omitted) |
 | `--note <text>` | No | Optional payment note |
