@@ -193,6 +193,16 @@ const RAMP_TRANSFER_QUERY = `
   }
 `
 
+// Live consumer exchange-rate mutation — works with the bearer token. Returns
+// the RATE (the `amount` value doesn't change the result). Read-only despite
+// being a GraphQL mutation; never moves money. Used to suggest an accurate
+// local-currency minimum (the static USD_RATES table lags the live rate).
+const EXCHANGE_RATE_QUERY = `
+  mutation GetExchangeRate($input: ExchangeRateInput!) {
+    getExchangeRate(input: $input)
+  }
+`
+
 // Mirrors the mobile app's `checkLimits` query — the authoritative source for
 // the withdrawal minimum and per-user limit. Read-only; never mutates. Used to
 // pre-check BEFORE the irreversible `withdrawAccount` mutation so we never
@@ -681,6 +691,19 @@ export class BlazeClient {
       limitUsdCents: c.limit?.amount ?? null,
       remainingUsdCents: c.remaining?.amount ?? null,
     }
+  }
+
+  /**
+   * Live consumer exchange rate: 1 unit of `from` = N units of `to`.
+   * e.g. getExchangeRate("MXN", "USD") → ~0.0567. Used to suggest an accurate
+   * local minimum (the static USD_RATES table lags the live rate). Read-only.
+   */
+  async getExchangeRate(from: string, to: string): Promise<number> {
+    const data = await this.graphqlRequest<{ getExchangeRate: number }>(
+      EXCHANGE_RATE_QUERY,
+      { input: { from: from.toUpperCase(), to: to.toUpperCase(), amount: 1 } }
+    )
+    return data.getExchangeRate
   }
 
   /**

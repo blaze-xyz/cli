@@ -1,6 +1,6 @@
 {
   "name": "@blaze-money/cli",
-  "version": "1.2.0",
+  "version": "1.2.1",
   "description": "Blaze payments SDK, CLI, and MCP server — payments infrastructure for modern businesses",
   "license": "MIT",
   "repository": {

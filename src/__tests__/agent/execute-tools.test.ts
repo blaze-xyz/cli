@@ -42,6 +42,7 @@ function createMockClient(): BlazeClient {
       minimumAmountCents: 500,
     },
     getRampTransfer: { id: "rt_1", feeCollections: [] },
+    getExchangeRate: 0.0567,
     getApplicableWithdrawalFee: {
       totalFeeCents: 200,
       displayName: "Card Withdrawal Fee",

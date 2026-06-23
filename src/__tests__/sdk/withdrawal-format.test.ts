@@ -5,6 +5,7 @@ import {
   deriveWithdrawalAmounts,
   humanizeWithdrawIneligibilityReason,
   mapToPaymentMethodType,
+  suggestedLocalMinimum,
   toCents,
   totalFeeCents,
   MAX_TRANSACTION_CENTS,
@@ -332,6 +333,33 @@ describe("estimateLocalAmount", () => {
 
     // Assert
     expect(local).toBe(5)
+  })
+})
+
+describe("suggestedLocalMinimum", () => {
+  it("uses the live rate plus a one-unit spread buffer when a rate is given", () => {
+    // Arrange & Act — $5 / 0.0567 = 88.18 → ceil 89, +1 spread buffer = 90.
+    const local = suggestedLocalMinimum(5, "MXN", 0.0567)
+
+    // Assert
+    expect(local).toBe(90)
+  })
+
+  it("falls back to a 10% buffered static estimate when no rate is given", () => {
+    // Arrange & Act — static $5 in MXN is 85.75 → ceil(85.75 * 1.1) = 95.
+    const local = suggestedLocalMinimum(5, "MXN", null)
+
+    // Assert
+    expect(local).toBe(Math.ceil(estimateLocalAmount(5, "MXN") * 1.1))
+    expect(local).toBe(95)
+  })
+
+  it("falls back to the static estimate when the rate is zero or negative", () => {
+    // Arrange & Act — a non-positive rate is treated as unavailable.
+    const local = suggestedLocalMinimum(5, "MXN", 0)
+
+    // Assert
+    expect(local).toBe(95)
   })
 })
 

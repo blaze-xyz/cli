@@ -39,6 +39,7 @@ describe("MCP consumer withdrawal tools", () => {
   let checkWithdrawalLimits: jest.Mock
   let getRampTransfer: jest.Mock
   let getApplicableWithdrawalFee: jest.Mock
+  let getExchangeRate: jest.Mock
 
   // Rebuilds the recording server + tools against a fresh client. Lets a test
   // override authContext (e.g. business) before the tools capture the client.
@@ -51,6 +52,7 @@ describe("MCP consumer withdrawal tools", () => {
       checkWithdrawalLimits,
       getRampTransfer,
       getApplicableWithdrawalFee,
+      getExchangeRate,
       ...clientOverrides,
     } as unknown as BlazeClient
     const recording = createRecordingServer()
@@ -89,6 +91,9 @@ describe("MCP consumer withdrawal tools", () => {
       minFeeCents: 200,
       configId: "c",
     })
+    // Live consumer exchange rate (1 local = N USD) for the below-minimum
+    // suggestion. 0.0567 ≈ 1 MXN in USD.
+    getExchangeRate = jest.fn().mockResolvedValue(0.0567)
     buildTools()
   })
 
@@ -247,6 +252,32 @@ describe("MCP consumer withdrawal tools", () => {
     expect(result.isError).toBe(true)
     expect(result.content[0].text).toContain(
       "Withdrawals must be at least $5.00 USD"
+    )
+    expect(withdrawToPaymentMethod).not.toHaveBeenCalled()
+  })
+
+  it("suggests a live-rate local minimum for a below-minimum non-USD withdrawal", async () => {
+    // Arrange — 1 MXN ≈ 0.0567 USD live → ceil(5 / 0.0567) + 1 = 90 MXN.
+    checkWithdrawalLimits.mockResolvedValueOnce({
+      meetsMinimum: false,
+      isUnderLimit: true,
+      minimumAmountCents: 500,
+    })
+    getExchangeRate.mockResolvedValueOnce(0.0567)
+    const tool = tools.find(t => t.name === "blaze_withdraw_to_payment_method")!
+
+    // Act
+    const result = await tool.handler({
+      payment_method_id: "pm_1",
+      amount: 50,
+      currency: "MXN",
+      confirm: true,
+    })
+
+    // Assert
+    expect(result.isError).toBe(true)
+    expect(result.content[0].text).toContain(
+      "Withdrawals must be at least $5.00 USD (about 90 MXN)"
     )
     expect(withdrawToPaymentMethod).not.toHaveBeenCalled()
   })

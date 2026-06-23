@@ -208,6 +208,9 @@ function createMockClient(overrides: Record<string, unknown> = {}) {
       isUnderLimit: true,
       minimumAmountCents: 500,
     }),
+    // Live consumer exchange rate (1 local = N USD) used to suggest an accurate
+    // local minimum on the below-minimum path. 0.0567 ≈ 1 MXN in USD.
+    getExchangeRate: jest.fn().mockResolvedValue(0.0567),
     getRampTransfer: jest.fn().mockResolvedValue({
       id: "rt_1",
       status: "Pending",
@@ -1660,6 +1663,64 @@ describe("CLI Command Responses", () => {
 
       expect(errorSpy).toHaveBeenCalledWith(
         expect.stringContaining("Withdrawals must be at least $5.00 USD")
+      )
+      expect(withdrawToPaymentMethod).not.toHaveBeenCalled()
+      exitSpy.mockRestore()
+      errorSpy.mockRestore()
+    })
+
+    it("suggests a live-rate local minimum for a below-minimum non-USD withdrawal", async () => {
+      const exitSpy = jest.spyOn(process, "exit").mockImplementation((() => {
+        throw new Error("process.exit called")
+      }) as never)
+      const errorSpy = jest.spyOn(console, "error").mockImplementation(() => {})
+      const withdrawToPaymentMethod = jest.fn()
+      mockGetClient.mockResolvedValue(
+        createMockClient({
+          authContext: "consumer",
+          getBalance: jest
+            .fn()
+            .mockResolvedValue({ available: 100000, pending: 0 }),
+          checkWithdrawalLimits: jest.fn().mockResolvedValue({
+            meetsMinimum: false,
+            isUnderLimit: true,
+            minimumAmountCents: 500,
+          }),
+          // 1 MXN ≈ 0.0567 USD live → ceil(5 / 0.0567) + 1 = 90 MXN.
+          getExchangeRate: jest.fn().mockResolvedValue(0.0567),
+          listConnectedPaymentMethods: jest.fn().mockResolvedValue({
+            methods: [
+              {
+                id: "pm_1",
+                type: "Bank",
+                displayName: "Banamex",
+                canWithdraw: true,
+              },
+            ],
+            defaultWithdrawalMethodId: "pm_1",
+          }),
+          withdrawToPaymentMethod,
+        })
+      )
+
+      await expect(
+        program.parseAsync([
+          "node",
+          "blaze",
+          "withdrawals",
+          "to-method",
+          "--amount",
+          "50",
+          "--currency",
+          "MXN",
+          "--yes",
+        ])
+      ).rejects.toThrow("process.exit called")
+
+      expect(errorSpy).toHaveBeenCalledWith(
+        expect.stringContaining(
+          "Withdrawals must be at least $5.00 USD (about 90 MXN)"
+        )
       )
       expect(withdrawToPaymentMethod).not.toHaveBeenCalled()
       exitSpy.mockRestore()

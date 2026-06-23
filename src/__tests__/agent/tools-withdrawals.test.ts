@@ -11,6 +11,7 @@ function makeClient(overrides: Record<string, jest.Mock> = {}): {
     checkWithdrawalLimits: jest.Mock
     getRampTransfer: jest.Mock
     getApplicableWithdrawalFee: jest.Mock
+    getExchangeRate: jest.Mock
   }
 } {
   const mocks = {
@@ -42,6 +43,9 @@ function makeClient(overrides: Record<string, jest.Mock> = {}): {
       minFeeCents: 200,
       configId: "c",
     }),
+    // Live consumer exchange rate (1 local = N USD) for the below-minimum
+    // suggestion. 0.0567 ≈ 1 MXN in USD.
+    getExchangeRate: jest.fn().mockResolvedValue(0.0567),
     ...overrides,
   }
   return { client: mocks as unknown as BlazeClient, mocks }
@@ -254,6 +258,33 @@ describe("agent tool registry — consumer withdrawal tools", () => {
     // Assert
     expect(result.success).toBe(false)
     expect(result.error).toContain("Withdrawals must be at least $5.00 USD")
+    expect(mocks.withdrawToPaymentMethod).not.toHaveBeenCalled()
+  })
+
+  it("suggests a live-rate local minimum for a below-minimum non-USD withdrawal", async () => {
+    // Arrange — 1 MXN ≈ 0.0567 USD live → ceil(5 / 0.0567) + 1 = 90 MXN.
+    const { client, mocks } = makeClient({
+      checkWithdrawalLimits: jest.fn().mockResolvedValue({
+        meetsMinimum: false,
+        isUnderLimit: true,
+        minimumAmountCents: 500,
+      }),
+      getExchangeRate: jest.fn().mockResolvedValue(0.0567),
+    })
+
+    // Act
+    const result = (await executeTool(
+      "blaze_withdraw",
+      { amount: 50, currency: "MXN" },
+      client,
+      memory
+    )) as { success: boolean; error: string }
+
+    // Assert
+    expect(result.success).toBe(false)
+    expect(result.error).toContain(
+      "Withdrawals must be at least $5.00 USD (about 90 MXN)"
+    )
     expect(mocks.withdrawToPaymentMethod).not.toHaveBeenCalled()
   })
 

@@ -12,7 +12,7 @@ import {
   deriveWithdrawalAmounts,
   formatConnectedPaymentMethodLabel,
   estimateWithdrawalArrival,
-  estimateLocalAmount,
+  suggestedLocalMinimum,
   humanizeWithdrawIneligibilityReason,
   mapToPaymentMethodType,
   totalFeeCents,
@@ -377,13 +377,23 @@ export function registerWithdrawalsCommands(program: Command): void {
             // Limit check is best-effort; the server enforces minimums/limits on submit.
           }
           if (limits && !limits.meetsMinimum) {
-            const minUsd = (limits.minimumAmountCents / 100).toFixed(2)
-            const localNote =
-              currency === "USD"
-                ? ""
-                : ` (about ${Math.ceil(estimateLocalAmount(limits.minimumAmountCents / 100, currency))} ${currency})`
+            const minUsd = limits.minimumAmountCents / 100
+            let localNote = ""
+            if (currency !== "USD") {
+              // Best-effort live rate so the suggested local minimum actually
+              // clears the USD minimum (the static USD_RATES table lags the
+              // live rate). On failure, fall back to the buffered static
+              // estimate inside the helper.
+              let rate: number | null = null
+              try {
+                rate = await client.getExchangeRate(currency, "USD")
+              } catch {
+                // best-effort; fall back to the static estimate inside the helper
+              }
+              localNote = ` (about ${suggestedLocalMinimum(minUsd, currency, rate)} ${currency})`
+            }
             fail(
-              `Withdrawals must be at least $${minUsd} USD${localNote}. You entered ${opts.amount} ${currency}.`,
+              `Withdrawals must be at least $${minUsd.toFixed(2)} USD${localNote}. You entered ${opts.amount} ${currency}.`,
               globals.format
             )
             return

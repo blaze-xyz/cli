@@ -7,6 +7,7 @@ import {
   formatConnectedPaymentMethodLabel,
   humanizeWithdrawIneligibilityReason,
   mapToPaymentMethodType,
+  suggestedLocalMinimum,
   totalFeeCents,
 } from "../constants/withdrawal-format"
 import * as schemas from "./schemas"
@@ -1384,9 +1385,22 @@ export function registerTools(server: McpServer, client: BlazeClient): void {
             currencyCode: currency,
           })
           if (!limits.meetsMinimum) {
+            const minUsd = limits.minimumAmountCents / 100
+            let localNote = ""
+            if (currency !== "USD") {
+              // Best-effort live rate so the suggested local minimum actually
+              // clears the USD minimum (the static USD_RATES table lags).
+              let rate: number | null = null
+              try {
+                rate = await client.getExchangeRate(currency, "USD")
+              } catch {
+                // best-effort; fall back to the static estimate inside the helper
+              }
+              localNote = ` (about ${suggestedLocalMinimum(minUsd, currency, rate)} ${currency})`
+            }
             return errorResult(
               new Error(
-                `Withdrawals must be at least $${(limits.minimumAmountCents / 100).toFixed(2)} USD. You entered ${params.amount} ${currency}.`
+                `Withdrawals must be at least $${minUsd.toFixed(2)} USD${localNote}. You entered ${params.amount} ${currency}.`
               )
             )
           }

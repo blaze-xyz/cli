@@ -102,6 +102,22 @@ export function estimateLocalAmount(
   return rate ? usdMajorUnits * rate : usdMajorUnits
 }
 
+/**
+ * Suggests a local-currency minimum that reliably clears the USD minimum.
+ * Prefer the live rate (localToUsdRate = 1 local in USD); the +1 covers the
+ * small server spread. Falls back to a buffered static estimate.
+ */
+export function suggestedLocalMinimum(
+  minUsd: number,
+  currency: string,
+  localToUsdRate?: number | null
+): number {
+  if (localToUsdRate && localToUsdRate > 0) {
+    return Math.ceil(minUsd / localToUsdRate) + 1
+  }
+  return Math.ceil(estimateLocalAmount(minUsd, currency) * 1.1)
+}
+
 /** Sums FeeCollection rows to total fee cents (USD). */
 export function totalFeeCents(
   feeCollections?: { amountCents: number }[] | null

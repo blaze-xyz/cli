@@ -412,6 +412,34 @@ describe("BlazeClient.checkWithdrawalLimits", () => {
   })
 })
 
+describe("BlazeClient.getExchangeRate", () => {
+  it("sends the getExchangeRate mutation with uppercased from/to and amount 1", async () => {
+    // Arrange
+    const fetchMock = mockGraphql(200, { data: { getExchangeRate: 0.0567 } })
+
+    // Act
+    await client.getExchangeRate("mxn", "usd")
+
+    // Assert
+    const body = bodyOf(fetchMock)
+    expect(body.query).toContain("getExchangeRate(input: $input)")
+    expect(body.variables).toEqual({
+      input: { from: "MXN", to: "USD", amount: 1 },
+    })
+  })
+
+  it("returns the Float rate from the response", async () => {
+    // Arrange
+    mockGraphql(200, { data: { getExchangeRate: 0.0567 } })
+
+    // Act
+    const rate = await client.getExchangeRate("MXN", "USD")
+
+    // Assert
+    expect(rate).toBe(0.0567)
+  })
+})
+
 describe("BlazeClient.getApplicableWithdrawalFee", () => {
   it("sends the applicableFee query with the unquoted Withdrawal operationType and inputs", async () => {
     // Arrange
