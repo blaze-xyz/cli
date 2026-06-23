@@ -335,7 +335,7 @@ Per scenario: the agent's turn-by-turn loop — reasoning, every tool call (name
     {
       "id": "cmq5j2vb500090ntwtc4bqgt9",
       "object": "customer",
-      "email": "john+iq@example.com",
+      "email": "*****",
       "first_name": null,
       "last_name": null,
       "phone": null,
@@ -351,7 +351,7 @@ Per scenario: the agent's turn-by-turn loop — reasoning, every tool call (name
     {
       "id": "cmq5j0dd800070ntwnm06jpab",
       "object": "customer",
-      "email": "eval+iq@example.com",
+      "email": "*****",
       "first_name": "Eval",
       "last_name": "Bot",
       "phone": null,
@@ -370,14 +370,14 @@ Per scenario: the agent's turn-by-turn loop — reasoning, every tool call (name
 > 
 > | # | Name | Email | Created |
 > |---|------|-------|---------|
-> | 1 | *(no name)* | john+iq@example.com | Jun 8, 2026 |
-> | 2 | Eval Bot | eval+iq@example.com | Jun 8, 2026 |
-> | 3 | Eval Bot | eval+kz@example.com | Jun 8, 2026 |
-> | 4 | Eval Bot | eval+fb@example.com | Jun 8, 2026 |
-> | 5 | Eval Bot | eval+iy@example.com | Jun 8, 2026 |
-> | 6 | Eval Bot | eval+fu@example.com | Jun 8, 2026 |
-> | 7 | Test Customer 3470 | test-customer-3470@earlystagejobs.com | May 29, 2026 |
-> | 8 | *(no name)* | scope-test-1778058959@example.com | May 6, 2026 |
+> | 1 | *(no name)* | ***** | Jun 8, 2026 |
+> | 2 | Eval Bot | ***** | Jun 8, 2026 |
+> | 3 | Eval Bot | ***** | Jun 8, 2026 |
+> | 4 | Eval Bot | ***** | Jun 8, 2026 |
+> | 5 | Eval Bot | ***** | Jun 8, 2026 |
+> | 6 | Eval Bot | ***** | Jun 8, 2026 |
+> | 7 | Test Customer 3470 | ***** | May 29, 2026 |
+> | 8 | *(no name)* | ***** | May 6, 2026 |
 > 
 > **Notes:**
 > - Most customers were created on **June 8, 2026**, likely via testing/eval workflows.
@@ -392,14 +392,14 @@ Per scenario: the agent's turn-by-turn loop — reasoning, every tool call (name
 > 
 > | # | Name | Email | Created |
 > |---|------|-------|---------|
-> | 1 | *(no name)* | john+iq@example.com | Jun 8, 2026 |
-> | 2 | Eval Bot | eval+iq@example.com | Jun 8, 2026 |
-> | 3 | Eval Bot | eval+kz@example.com | Jun 8, 2026 |
-> | 4 | Eval Bot | eval+fb@example.com | Jun 8, 2026 |
-> | 5 | Eval Bot | eval+iy@example.com | Jun 8, 2026 |
-> | 6 | Eval Bot | eval+fu@example.com | Jun 8, 2026 |
-> | 7 | Test Customer 3470 | test-customer-3470@earlystagejobs.com | May 29, 2026 |
-> | 8 | *(no name)* | scope-test-1778058959@example.com | May 6, 2026 |
+> | 1 | *(no name)* | ***** | Jun 8, 2026 |
+> | 2 | Eval Bot | ***** | Jun 8, 2026 |
+> | 3 | Eval Bot | ***** | Jun 8, 2026 |
+> | 4 | Eval Bot | ***** | Jun 8, 2026 |
+> | 5 | Eval Bot | ***** | Jun 8, 2026 |
+> | 6 | Eval Bot | ***** | Jun 8, 2026 |
+> | 7 | Test Customer 3470 | ***** | May 29, 2026 |
+> | 8 | *(no name)* | ***** | May 6, 2026 |
 > 
 > **Notes:**
 > - Most customers were created on **June 8, 2026**, likely via testing/eval workflows.
@@ -413,14 +413,14 @@ Per scenario: the agent's turn-by-turn loop — reasoning, every tool call (name
 ---
 
 ## ✅ business-create-customer — business
-**Prompt:** `Create a customer with email eval+oi@example.com, first name Eval, last name Bot`
+**Prompt:** `Create a customer with email *****, first name Eval, last name Bot`
 
 ### Turn 1
 
 **🛠 `blaze_create_customer`**
 ```json
 {
-  "email": "eval+oi@example.com",
+  "email": "*****",
   "first_name": "Eval",
   "last_name": "Bot"
 }
@@ -430,7 +430,7 @@ Per scenario: the agent's turn-by-turn loop — reasoning, every tool call (name
 {
   "id": "cmq6jocvj000a0ntw7g79ph81",
   "object": "customer",
-  "email": "eval+oi@example.com",
+  "email": "*****",
   "first_name": "Eval",
   "last_name": "Bot",
   "phone": null,
@@ -455,7 +455,7 @@ Per scenario: the agent's turn-by-turn loop — reasoning, every tool call (name
 > |-------|-------|
 > | **ID** | `cmq6jocvj000a0ntw7g79ph81` |
 > | **Name** | Eval Bot |
-> | **Email** | eval+oi@example.com |
+> | **Email** | ***** |
 > | **Created** | June 9, 2026 |
 
 **Final answer:**
@@ -466,7 +466,7 @@ Per scenario: the agent's turn-by-turn loop — reasoning, every tool call (name
 > |-------|-------|
 > | **ID** | `cmq6jocvj000a0ntw7g79ph81` |
 > | **Name** | Eval Bot |
-> | **Email** | eval+oi@example.com |
+> | **Email** | ***** |
 > | **Created** | June 9, 2026 |
 
 **Tool sequence:** `blaze_create_customer` · **Verdict:** PASS
@@ -1034,14 +1034,14 @@ Per scenario: the agent's turn-by-turn loop — reasoning, every tool call (name
 ---
 
 ## ✅ create-customer-john — business
-**Prompt:** `Create a customer for john+oi@example.com`
+**Prompt:** `Create a customer for *****`
 
 ### Turn 1
 
 **🛠 `blaze_create_customer`**
 ```json
 {
-  "email": "john+oi@example.com"
+  "email": "*****"
 }
 ```
 → result:
@@ -1049,7 +1049,7 @@ Per scenario: the agent's turn-by-turn loop — reasoning, every tool call (name
 {
   "id": "cmq6jqj4r000c0ntwoxp658zc",
   "object": "customer",
-  "email": "john+oi@example.com",
+  "email": "*****",
   "first_name": null,
   "last_name": null,
   "phone": null,
@@ -1073,7 +1073,7 @@ Per scenario: the agent's turn-by-turn loop — reasoning, every tool call (name
 > | Field | Value |
 > |-------|-------|
 > | **ID** | `cmq6jqj4r000c0ntwoxp658zc` |
-> | **Email** | john+oi@example.com |
+> | **Email** | ***** |
 > | **Created** | Just now |
 > 
 > No name or phone was provided — you can update the customer later if you'd like to add those details.
@@ -1085,7 +1085,7 @@ Per scenario: the agent's turn-by-turn loop — reasoning, every tool call (name
 > | Field | Value |
 > |-------|-------|
 > | **ID** | `cmq6jqj4r000c0ntwoxp658zc` |
-> | **Email** | john+oi@example.com |
+> | **Email** | ***** |
 > | **Created** | Just now |
 > 
 > No name or phone was provided — you can update the customer later if you'd like to add those details.
@@ -1160,7 +1160,7 @@ Per scenario: the agent's turn-by-turn loop — reasoning, every tool call (name
     {
       "id": "cmq6jqj4r000c0ntwoxp658zc",
       "object": "customer",
-      "email": "john+oi@example.com",
+      "email": "*****",
       "first_name": null,
       "last_name": null,
       "phone": null,
@@ -1176,7 +1176,7 @@ Per scenario: the agent's turn-by-turn loop — reasoning, every tool call (name
     {
       "id": "cmq6jocvj000a0ntw7g79ph81",
       "object": "customer",
-      "email": "eval+oi@example.com",
+      "email": "*****",
       "first_name": "Eval",
       "last_name": "Bot",
       "phone": null,

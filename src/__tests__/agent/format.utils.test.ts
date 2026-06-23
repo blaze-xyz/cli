@@ -1,4 +1,6 @@
 import {
+  annotateAmounts,
+  annotateRecordCounts,
   annotateSpendingSummary,
   formatCents,
 } from "../../agent/utils/format.utils"
@@ -129,5 +131,134 @@ describe("annotateSpendingSummary", () => {
     // Assert
     expect(annotateSpendingSummary(null)).toBeNull()
     expect(annotateSpendingSummary("nope")).toBe("nope")
+  })
+})
+
+describe("annotateAmounts", () => {
+  it("add amount_display to nested balance amounts in minor units", () => {
+    // Arrange
+    const balance = {
+      object: "balance",
+      available: { amount: 60, currency: "USD" },
+      pending: { amount: 7062, currency: "USD" },
+    }
+
+    // Act
+    const result = annotateAmounts(balance) as {
+      available: { amount: number; currency: string; amount_display: string }
+      pending: { amount_display: string }
+    }
+
+    // Assert
+    expect(result.available.amount_display).toBe("$0.60")
+    expect(result.pending.amount_display).toBe("$70.62")
+    expect(result.available.amount).toBe(60)
+  })
+
+  it("annotate each item amount in a transactions list", () => {
+    // Arrange
+    const list = {
+      object: "list",
+      data: [
+        { id: "t1", amount: 250000, currency: "USD", fee: null },
+        { id: "t2", amount: 100000, currency: "USD", fee: 250 },
+      ],
+    }
+
+    // Act
+    const result = annotateAmounts(list) as {
+      data: Array<{ amount_display: string; fee_display?: string }>
+    }
+
+    // Assert
+    expect(result.data[0].amount_display).toBe("$2,500.00")
+    expect(result.data[1].amount_display).toBe("$1,000.00")
+    expect(result.data[1].fee_display).toBe("$2.50")
+    expect(result.data[0].fee_display).toBeUndefined()
+  })
+
+  it("format a non-USD currency from minor units", () => {
+    // Act
+    const result = annotateAmounts({ amount: 250000, currency: "MXN" }) as {
+      amount_display: string
+    }
+
+    // Assert
+    expect(result.amount_display).toContain("2,500.00")
+  })
+
+  it("leave objects without a currency untouched", () => {
+    // Arrange
+    const obj = { amount: 60, name: "no currency here" }
+
+    // Act
+    const result = annotateAmounts(obj)
+
+    // Assert
+    expect(result).toEqual({ amount: 60, name: "no currency here" })
+  })
+
+  it("not mutate the input object", () => {
+    // Arrange
+    const balance = { available: { amount: 60, currency: "USD" } }
+
+    // Act
+    annotateAmounts(balance)
+
+    // Assert
+    expect(balance.available).not.toHaveProperty("amount_display")
+  })
+
+  it("pass through null and primitive inputs", () => {
+    // Assert
+    expect(annotateAmounts(null)).toBeNull()
+    expect(annotateAmounts(42)).toBe(42)
+    expect(annotateAmounts("nope")).toBe("nope")
+  })
+})
+
+describe("annotateRecordCounts", () => {
+  it("compute count and by_status from a transactions list (backend-agnostic)", () => {
+    // Arrange — synthetic data, no backend involved
+    const result = {
+      object: "list",
+      data: [
+        { id: "a", status: "completed" },
+        { id: "b", status: "failed" },
+        { id: "c", status: "failed" },
+        { id: "d", status: "completed" },
+        { id: "e", status: "failed" },
+      ],
+    }
+
+    // Act
+    const r = annotateRecordCounts(result) as {
+      summary: { count: number; by_status: Record<string, number> }
+    }
+
+    // Assert
+    expect(r.summary.count).toBe(5)
+    expect(r.summary.by_status).toEqual({ completed: 2, failed: 3 })
+  })
+
+  it("count records that have no status (count only)", () => {
+    // Act
+    const r = annotateRecordCounts({ data: [{ id: "x" }, { id: "y" }] }) as {
+      summary: { count: number; by_status: Record<string, number> }
+    }
+
+    // Assert
+    expect(r.summary.count).toBe(2)
+    expect(r.summary.by_status).toEqual({})
+  })
+
+  it("pass through non-list results unchanged", () => {
+    // Assert
+    expect(annotateRecordCounts({ object: "balance", amount: 60 })).toEqual({
+      object: "balance",
+      amount: 60,
+    })
+    expect(annotateRecordCounts(null)).toBeNull()
+    expect(annotateRecordCounts([1, 2, 3])).toEqual([1, 2, 3])
   })
 })

@@ -5,6 +5,7 @@ import { createClient, getDefaultModel } from "./llm-provider"
 import { MemoryStore } from "./memory"
 import { buildSystemPrompt } from "./system-prompt"
 import { buildTools, executeTool } from "./tools"
+import { ToolCallGuard } from "./tool-guard"
 
 // ============================================
 // Loop bounds — defense against adversarial inputs that try to pin the
@@ -58,6 +59,8 @@ export async function runAgent(
   let turns = 0
   let toolCalls = 0
   let cumulativeInputTokens = 0
+
+  const guard = new ToolCallGuard()
 
   // Agentic loop with bounds
   // eslint-disable-next-line no-constant-condition
@@ -114,6 +117,16 @@ export async function runAgent(
         if (block.type === "tool_use") {
           toolCalls++
           if (toolCalls > maxToolCalls) break
+          const shortCircuit = guard.shortCircuit(block.name)
+          if (shortCircuit) {
+            toolResults.push({
+              type: "tool_result",
+              tool_use_id: block.id,
+              content: JSON.stringify(shortCircuit),
+              is_error: true,
+            })
+            continue
+          }
           try {
             const result = await executeTool(
               block.name,
@@ -127,6 +140,7 @@ export async function runAgent(
               content: JSON.stringify(result),
             })
           } catch (err) {
+            guard.recordError(block.name, err)
             const t = translateError(err)
             toolResults.push({
               type: "tool_result",

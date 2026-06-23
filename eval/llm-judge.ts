@@ -71,7 +71,7 @@ export async function judgeAgentAnswer(args: {
       (t, i) =>
         `[${i + 1}] ${t.tool}${t.is_error ? " (ERROR)" : ""}: ${truncate(
           JSON.stringify(t.result),
-          8000
+          40000
         )}`
     )
     .join("\n")
@@ -91,7 +91,7 @@ TOOL CALLS + RESULTS:
 ${toolBlock || "(no tools were called)"}
 
 FINAL ANSWER:
-${truncate(args.finalAnswer, 2500)}
+${truncate(args.finalAnswer, 12000)}
 
 EXPECTED TRAITS (all must hold):
 ${args.expectedTraits.map(t => `- ${t}`).join("\n") || "(none)"}

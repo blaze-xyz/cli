@@ -462,13 +462,25 @@
       "forbidden_tools": [],
       "param_assertions": [],
       "expected_output_traits": [
-        "States plainly there is no marketing spend recorded for the period"
+        "States plainly there is no marketing spend recorded for the period and offers a relevant next step, without speculating about why"
       ],
       "forbidden_output_traits": [
         "Lists multiple numbered hypotheses for why the result is empty",
-        "Speculates about Plaid / connected accounts / business context / scopes without the tool result stating it"
+        "Speculates about Plaid / connected accounts / business context / scopes without the tool result stating it",
+        "Attributes the empty result to setup, a missing/unconnected account, a sync delay, a billing cycle, or dashboard configuration"
       ],
-      "forbidden_output_patterns": ["HTTP\\s*\\d{3}"],
+      "forbidden_output_patterns": [
+        "HTTP\\s*\\d{3}",
+        "not\\s+(yet\\s+)?connected",
+        "dashboard",
+        "\\bplaid\\b",
+        "you\\s+may\\s+need\\s+to",
+        "billing\\s+cycle",
+        "sync(ed|ing)?\\b",
+        "n['’]?t\\s+connected",
+        "is\\s+not\\s+connected",
+        "needs?\\s+to\\s+be\\s+connected"
+      ],
       "requires_creds": ["business"],
       "tolerate_tool_errors": true,
       "allow_no_tools": false
@@ -506,22 +518,27 @@
       "forbidden_tools": [],
       "param_assertions": [],
       "expected_output_traits": [
-        "Explains it cannot access bills and gives one clear next step in plain language"
+        "Says plainly this account doesn't have access to bills and gives exactly one clear next step in plain language"
       ],
       "forbidden_output_traits": [
         "Recommends checking API-key scopes or names scope strings like BILLS_READ",
         "Retries the same forbidden endpoint multiple times",
-        "Lists multiple numbered causes for the failure"
+        "Lists multiple numbered causes for the failure",
+        "Claims, without tool evidence, which account types or features can access bills (e.g. 'AP automation')"
       ],
       "forbidden_output_patterns": [
         "HTTP\\s*\\d{3}",
         "Forbidden resource",
         "BILLS_READ",
-        "BILLS_WRITE"
+        "BILLS_WRITE",
+        "AP automation",
+        "typically available",
+        "accounts?\\s+with\\b"
       ],
       "requires_creds": ["limited"],
       "tolerate_tool_errors": true,
-      "allow_no_tools": false
+      "allow_no_tools": false,
+      "forbid_duplicate_tool_calls": true
     },
     {
       "id": "errorux-consumer-boundary-routing",

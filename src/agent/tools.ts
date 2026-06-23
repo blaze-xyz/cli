@@ -14,7 +14,11 @@ import {
   suggestedLocalMinimum,
   totalFeeCents,
 } from "../constants/withdrawal-format"
-import { annotateSpendingSummary } from "./utils/format.utils"
+import {
+  annotateAmounts,
+  annotateRecordCounts,
+  annotateSpendingSummary,
+} from "./utils/format.utils"
 
 type ToolInput = Record<string, unknown>
 
@@ -160,7 +164,7 @@ const toolDefs: ToolDef[] = [
     schema: {
       name: "blaze_get_balance",
       description:
-        "Get the current account balance (available and pending funds).",
+        'Get the current account balance (available and pending funds). Amounts are integer minor units (cents); each available/pending/reserved figure includes a pre-formatted `amount_display` string (e.g. "$0.60") — report `amount_display` verbatim and never divide or convert amounts yourself.',
       input_schema: { type: "object", properties: {}, required: [] },
     },
     execute: async (_input, client) => client.getBalance(),
@@ -949,7 +953,7 @@ const toolDefs: ToolDef[] = [
     schema: {
       name: "blaze_list_transactions",
       description:
-        "List account transactions with optional type and status filters.",
+        "List account transactions with optional type and status filters. Each transaction's `amount` is in integer minor units (cents) with a pre-formatted `amount_display` string — report `amount_display` verbatim and never convert amounts yourself. Report each transaction's `status` exactly as returned; never relabel or infer it. The result also includes a `summary` with `count` and `by_status` — report those counts verbatim; never tally the list yourself, and never show more rows than the tool returned.",
       input_schema: props([], {
         limit: { type: "number", description: "Maximum number of results" },
         type: {
@@ -2253,5 +2257,11 @@ export async function executeTool(
 ): Promise<unknown> {
   const def = toolDefs.find(t => t.schema.name === name)
   if (!def) throw new Error(`Unknown tool: ${name}`)
-  return def.execute(input, client, memory)
+  // Centrally pre-format tool results so the agent reports verbatim instead of
+  // computing: `amount_display` strings for every { amount, currency } (no
+  // dividing by 100 / unit guessing), and a `summary` { count, by_status } for
+  // list results (no tallying long lists / miscounting). Both are derived from
+  // the returned data, so they behave identically on any backend.
+  const result = await def.execute(input, client, memory)
+  return annotateAmounts(annotateRecordCounts(result))
 }

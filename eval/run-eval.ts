@@ -27,6 +27,8 @@ import type Anthropic from "@anthropic-ai/sdk"
 import { BlazeOrchestrator } from "../src/agent/orchestrator"
 import { createClient, getDefaultModel } from "../src/agent/llm-provider"
 import { translateError } from "../src/sdk/errors"
+import { ToolCallGuard } from "../src/agent/tool-guard"
+import { collectPii, maskPii } from "./mask-pii"
 import { judgeAgentAnswer } from "./llm-judge"
 import { EvalCollector, type Verdict } from "./eval-store"
 import {
@@ -39,6 +41,11 @@ const MAX_TURNS = 12
 const MAX_TOOL_CALLS = 30
 const SCENARIOS_FILE = path.resolve(__dirname, "agent-nlp-scenarios.json")
 const REPORT_DIR = path.resolve(__dirname, "..", "test-results")
+
+// PII values collected from real tool results during the run. Every report
+// writer masks its output against this set so no personal data is persisted to
+// disk (the agent + judge still see real data at runtime).
+const reportPii = new Set<string>()
 
 // --- types ---
 
@@ -87,6 +94,12 @@ export interface ScenarioSpec {
   requires_creds?: ("business" | "consumer" | "readonly" | "limited")[]
   tolerate_tool_errors?: boolean
   allow_no_tools?: boolean
+  /**
+   * Deterministic: fail if any single tool is called more than once in the run.
+   * Enforces the "never re-call a tool after a final (non-retryable) error" rule
+   * — opt-in, since some legitimate flows call a tool repeatedly (e.g. pagination).
+   */
+  forbid_duplicate_tool_calls?: boolean
 }
 
 export interface ToolCallTrace {
@@ -249,6 +262,8 @@ async function runScenario(
   let toolCalls = 0
   let cost = 0
 
+  const guard = new ToolCallGuard()
+
   while (turns < MAX_TURNS && toolCalls < MAX_TOOL_CALLS) {
     turns++
     const response = await anthropic.messages.create({
@@ -276,9 +291,31 @@ async function runScenario(
       for (const block of response.content) {
         if (block.type !== "tool_use") continue
         toolCalls++
-        tool_sequence.push(block.name)
         const input = block.input as Record<string, unknown>
         let entry: ToolCallTrace
+        const shortCircuit = guard.shortCircuit(block.name)
+        if (shortCircuit) {
+          // Re-call of a tool that already failed non-retryably: short-circuited
+          // by the guard (mirrors production runAgent). Not counted in
+          // tool_sequence since it never actually executed.
+          entry = {
+            turn: turns,
+            tool_name: block.name,
+            input,
+            result: shortCircuit,
+            is_error: true,
+          }
+          toolResults.push({
+            type: "tool_result",
+            tool_use_id: block.id,
+            content: JSON.stringify(shortCircuit),
+            is_error: true,
+          })
+          trace.push(entry)
+          turnTools.push(entry)
+          continue
+        }
+        tool_sequence.push(block.name)
         try {
           const result = await orch.executeTool(block.name, input)
           entry = {
@@ -294,6 +331,7 @@ async function runScenario(
             content: JSON.stringify(result),
           })
         } catch (err) {
+          guard.recordError(block.name, err)
           // Mirror production (runAgent in src/agent/index.ts): the model never
           // sees raw HTTP codes / provider jargon — it sees the translated
           // {kind, retryable, hint, error} shape. The eval must replay this same
@@ -369,6 +407,18 @@ function applyAssertions(
   for (const t of s.forbidden_tools ?? []) {
     if (called.has(t))
       return { verdict: "FAIL", reasons: [`forbidden tool called: ${t}`] }
+  }
+  if (s.forbid_duplicate_tool_calls) {
+    const counts = new Map<string, number>()
+    for (const name of seq) counts.set(name, (counts.get(name) ?? 0) + 1)
+    const dup = [...counts.entries()].find(([, n]) => n > 1)
+    if (dup)
+      return {
+        verdict: "FAIL",
+        reasons: [
+          `tool called ${dup[1]}× — no retry allowed after a final error: ${dup[0]}`,
+        ],
+      }
   }
   if (s.tool_order && s.expected_tools.length > 1) {
     let i = 0
@@ -661,6 +711,8 @@ async function main(): Promise<void> {
         verdict,
         run,
       })
+    for (const tc of run.trace) collectPii(tc.result, reportPii)
+    collectPii(run.final_answer, reportPii)
     collector.add({
       id: v.id,
       tier: v.tier,
@@ -820,7 +872,7 @@ function writeMarkdown(
 
   fs.mkdirSync(REPORT_DIR, { recursive: true })
   const reportPath = path.join(REPORT_DIR, `agent-nlp-eval-${stamp}.md`)
-  fs.writeFileSync(reportPath, lines.join("\n") + "\n")
+  fs.writeFileSync(reportPath, maskPii(lines.join("\n") + "\n", reportPii))
   return reportPath
 }
 
@@ -901,7 +953,7 @@ function writeTraceDump(
   }
   fs.mkdirSync(REPORT_DIR, { recursive: true })
   const tracePath = path.join(REPORT_DIR, `agent-nlp-trace-${stamp}.md`)
-  fs.writeFileSync(tracePath, lines.join("\n") + "\n")
+  fs.writeFileSync(tracePath, maskPii(lines.join("\n") + "\n", reportPii))
   return tracePath
 }
 
@@ -983,7 +1035,7 @@ function writeHtmlReport(
 
   fs.mkdirSync(REPORT_DIR, { recursive: true })
   const htmlPath = path.join(REPORT_DIR, `agent-nlp-report-${stamp}.html`)
-  fs.writeFileSync(htmlPath, buildHtmlReport(data))
+  fs.writeFileSync(htmlPath, maskPii(buildHtmlReport(data), reportPii))
   return htmlPath
 }
 
