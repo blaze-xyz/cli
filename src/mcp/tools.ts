@@ -1492,7 +1492,6 @@ export function registerTools(server: McpServer, client: BlazeClient): void {
         const feeEst = pmType
           ? await client.getApplicableWithdrawalFee({
               paymentMethodType: pmType,
-              providerId: method.provider?.id,
               countryCode,
               amountCents: usdcAmountInCents,
             })

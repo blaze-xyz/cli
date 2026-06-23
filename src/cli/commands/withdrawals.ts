@@ -414,13 +414,18 @@ export function registerWithdrawalsCommands(program: Command): void {
           // the app uses). Best-effort: a thrown/null fee must never block the
           // withdrawal — the exact fee is written to the transfer at submit.
           // Only the network call is inside the try; nothing here exits.
+          //
+          // We pass countryCode + paymentMethodType (NOT the card's registered
+          // provider). getApplicableWithdrawalFee sends ignoreProvider so the
+          // server matches the actual execution-provider config — a card's
+          // withdrawal may failover from Coinflow to Bitso, so its registered
+          // provider isn't the one that collects the fee.
           let feeCents: number | null = null
           const pmType = mapToPaymentMethodType(method.type)
           if (pmType) {
             try {
               const feeEst = await client.getApplicableWithdrawalFee({
                 paymentMethodType: pmType,
-                providerId: method.provider?.id,
                 countryCode,
                 amountCents: usdcAmountInCents,
               })

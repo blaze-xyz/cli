@@ -916,7 +916,6 @@ const toolDefs: ToolDef[] = [
         const feeEst = pmType
           ? await client.getApplicableWithdrawalFee({
               paymentMethodType: pmType,
-              providerId: method.provider?.id,
               countryCode,
               amountCents: usdcAmountInCents,
             })
@@ -2199,7 +2198,12 @@ const toolDefs: ToolDef[] = [
       const i = input as {
         date: string
         memo?: string
-        lines: any[]
+        lines: {
+          account_id: string
+          amount: string
+          type: string
+          description?: string
+        }[]
         idempotency_key?: string
         provider?: string
         confirm?: boolean

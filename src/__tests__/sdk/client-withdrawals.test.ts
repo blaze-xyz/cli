@@ -460,7 +460,6 @@ describe("BlazeClient.getApplicableWithdrawalFee", () => {
     // Act
     await client.getApplicableWithdrawalFee({
       paymentMethodType: "Card",
-      providerId: "prov_coinflow",
       countryCode: "MX",
       amountCents: 2500,
     })
@@ -469,18 +468,42 @@ describe("BlazeClient.getApplicableWithdrawalFee", () => {
     const body = bodyOf(fetchMock)
     expect(body.query).toContain("applicableFee(input: $input)")
     expect(body.query).not.toContain('operationType: "Withdrawal"')
+    // Sends ignoreProvider and omits providerId so the server matches on
+    // country + type (the post-failover execution provider's config) rather
+    // than the card's registered provider.
     expect(body.variables).toEqual({
       input: {
         paymentMethodType: "Card",
-        providerId: "prov_coinflow",
         countryCode: "MX",
         operationType: "Withdrawal",
         amountCents: 2500,
+        ignoreProvider: true,
       },
     })
   })
 
-  it("defaults a missing providerId and countryCode to null in the input", async () => {
+  it("sends ignoreProvider true and never includes providerId in the input", async () => {
+    // Arrange
+    const fetchMock = mockGraphql(200, {
+      data: { applicableFee: { configId: "c", totalFeeCents: 5 } },
+    })
+
+    // Act
+    await client.getApplicableWithdrawalFee({
+      paymentMethodType: "Card",
+      countryCode: "MX",
+      amountCents: 500,
+    })
+
+    // Assert
+    const body = bodyOf(fetchMock) as {
+      variables: { input: Record<string, unknown> }
+    }
+    expect(body.variables.input.ignoreProvider).toBe(true)
+    expect(body.variables.input).not.toHaveProperty("providerId")
+  })
+
+  it("defaults a missing countryCode to null in the input", async () => {
     // Arrange
     const fetchMock = mockGraphql(200, {
       data: { applicableFee: { configId: "c", totalFeeCents: 200 } },
@@ -494,9 +517,8 @@ describe("BlazeClient.getApplicableWithdrawalFee", () => {
 
     // Assert
     const body = bodyOf(fetchMock) as {
-      variables: { input: { providerId: null; countryCode: null } }
+      variables: { input: { countryCode: null } }
     }
-    expect(body.variables.input.providerId).toBeNull()
     expect(body.variables.input.countryCode).toBeNull()
   })
 

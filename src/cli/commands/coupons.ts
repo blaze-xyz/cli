@@ -2,6 +2,11 @@ import { Command } from "commander"
 import { confirm } from "@inquirer/prompts"
 import { getClient, getGlobalOpts, handleError, withSpinner } from "../utils"
 import { formatOutput } from "../output"
+import {
+  CreateCouponInput,
+  ListCouponsParams,
+  UpdateCouponInput,
+} from "../../sdk/types"
 
 export function registerCouponsCommands(program: Command): void {
   const coupons = program
@@ -23,7 +28,7 @@ export function registerCouponsCommands(program: Command): void {
         try {
           const globals = getGlobalOpts(program)
           const client = await getClient(globals)
-          const params: any = {}
+          const params: ListCouponsParams = {}
           if (opts.limit) params.limit = opts.limit
           if (opts.active) params.is_active = true
           if (opts.inactive) params.is_active = false
@@ -142,7 +147,7 @@ export function registerCouponsCommands(program: Command): void {
             }
           }
 
-          const data: any = {
+          const data: CreateCouponInput = {
             code: opts.code,
             discount_type: opts.type,
             discount_value: opts.value,
@@ -195,7 +200,7 @@ export function registerCouponsCommands(program: Command): void {
           const globals = getGlobalOpts(program)
           const client = await getClient(globals)
 
-          const data: any = {}
+          const data: UpdateCouponInput = {}
           if (opts.maxRedemptions) data.max_redemptions = opts.maxRedemptions
           if (opts.expires)
             data.expires_at = new Date(opts.expires).toISOString()

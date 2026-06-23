@@ -7,6 +7,12 @@ import {
 } from "../utils"
 import { formatOutput } from "../output"
 
+interface AccountingIntegration {
+  id: string
+  provider: string
+  company_name?: string
+}
+
 export function registerAccountingCommands(program: Command): void {
   const accounting = program
     .command("accounting")
@@ -84,8 +90,9 @@ export function registerAccountingCommands(program: Command): void {
         const globals = getGlobalOpts(program)
         await requireBusinessContext(globals)
         const client = await getClient(globals)
-        const integrations = await client.getAccountingIntegrations()
-        const match = integrations.find((i: any) =>
+        const integrations =
+          (await client.getAccountingIntegrations()) as AccountingIntegration[]
+        const match = integrations.find(i =>
           i.provider.toLowerCase().includes(opts.provider.toLowerCase())
         )
         if (!match) {

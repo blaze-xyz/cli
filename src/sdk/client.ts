@@ -145,7 +145,9 @@ const CONNECTED_PAYMENT_METHODS_QUERY = `
 // The @Public `applicableFee` query — the SAME fee calculation the mobile app's
 // `useFeeDisplay` uses to preview a withdrawal fee BEFORE the irreversible
 // mutation. Read-only; never moves money. `operationType` is the unquoted
-// GraphQL enum the input expects ("Withdrawal").
+// GraphQL enum the input expects ("Withdrawal"). The input carries
+// `ignoreProvider: true` so the server matches on country + type rather than
+// the card's registered provider, which is wrong for failover-routed payouts.
 const APPLICABLE_FEE_QUERY = `
   query ApplicableWithdrawalFee($input: ApplicableFeeInput!) {
     applicableFee(input: $input) {
@@ -626,10 +628,18 @@ export class BlazeClient {
    * Returns null when the server returns no fee config for the inputs. Callers
    * should treat this as best-effort — the exact fee is written to the transfer
    * at submit time regardless.
+   *
+   * Sends `ignoreProvider: true` and intentionally does NOT pass the card's
+   * registered provider id. A card withdrawal's execution provider isn't known
+   * at preview time — it depends on runtime failover (Coinflow → Bitso), and
+   * the registered provider is often NOT the one that collects the fee.
+   * Passing it made the server match the wrong (generic) config and over-quote
+   * the fee. With ignoreProvider the server matches purely on
+   * countryCode + paymentMethodType, selecting the correct execution-provider
+   * config (e.g. Bitso/MX 1% for a Mexican card).
    */
   async getApplicableWithdrawalFee(input: {
     paymentMethodType: string
-    providerId?: string | null
     countryCode?: string | null
     amountCents: number
   }): Promise<ApplicableFee | null> {
@@ -638,10 +648,10 @@ export class BlazeClient {
     }>(APPLICABLE_FEE_QUERY, {
       input: {
         paymentMethodType: input.paymentMethodType,
-        providerId: input.providerId ?? null,
         countryCode: input.countryCode ?? null,
         operationType: "Withdrawal",
         amountCents: input.amountCents,
+        ignoreProvider: true,
       },
     })
     return data.applicableFee ?? null
@@ -1389,8 +1399,12 @@ export class BlazeClient {
   }
 
   // Payroll Intelligence (AI CFO Tool 8)
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   async getPayrollAnalysis(params?: { window_days?: number }): Promise<any> {
-    return this.request<any>("GET", `/v1/cfo/payroll${this.buildQuery(params)}`)
+    return this.request<unknown>(
+      "GET",
+      `/v1/cfo/payroll${this.buildQuery(params)}`
+    )
   }
 
   // Scenario Modeling (AI CFO Tool 4)
@@ -1469,8 +1483,9 @@ export class BlazeClient {
     )
   }
 
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   async getAccountingIntegrations(): Promise<any[]> {
-    return this.request<any[]>("GET", "/v1/accounting/integrations")
+    return this.request<unknown[]>("GET", "/v1/accounting/integrations")
   }
 
   async disconnectAccounting(integrationId: string): Promise<void> {
@@ -1482,6 +1497,7 @@ export class BlazeClient {
     end_date: string
     basis?: "cash" | "accrual"
     provider?: string
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
   }): Promise<any> {
     return this.request(
       "GET",
@@ -1493,6 +1509,7 @@ export class BlazeClient {
     as_of?: string
     basis?: "cash" | "accrual"
     provider?: string
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
   }): Promise<any> {
     return this.request(
       "GET",
@@ -1500,6 +1517,7 @@ export class BlazeClient {
     )
   }
 
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   async getChartOfAccounts(params?: { provider?: string }): Promise<any> {
     return this.request(
       "GET",
@@ -1512,6 +1530,7 @@ export class BlazeClient {
     end_date: string
     basis?: "cash" | "accrual"
     provider?: string
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
   }): Promise<any> {
     return this.request(
       "GET",
@@ -1523,6 +1542,7 @@ export class BlazeClient {
     start_date: string
     end_date: string
     provider?: string
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
   }): Promise<any> {
     return this.request(
       "GET",
@@ -1534,6 +1554,7 @@ export class BlazeClient {
     start_date: string
     end_date: string
     provider?: string
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
   }): Promise<any> {
     return this.request(
       "GET",
@@ -1547,6 +1568,7 @@ export class BlazeClient {
     limit?: number
     offset?: number
     provider?: string
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
   }): Promise<any> {
     return this.request(
       "GET",
@@ -1561,6 +1583,7 @@ export class BlazeClient {
     limit?: number
     offset?: number
     provider?: string
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
   }): Promise<any> {
     return this.request(
       "GET",
@@ -1575,6 +1598,7 @@ export class BlazeClient {
     limit?: number
     offset?: number
     provider?: string
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
   }): Promise<any> {
     return this.request(
       "GET",

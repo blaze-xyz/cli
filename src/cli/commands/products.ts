@@ -2,6 +2,11 @@ import { Command } from "commander"
 import { confirm } from "@inquirer/prompts"
 import { getClient, getGlobalOpts, handleError, withSpinner } from "../utils"
 import { formatOutput } from "../output"
+import {
+  CreateProductInput,
+  ListProductsParams,
+  UpdateProductInput,
+} from "../../sdk/types"
 import * as fs from "fs"
 import * as path from "path"
 
@@ -25,7 +30,7 @@ export function registerProductsCommands(program: Command): void {
         try {
           const globals = getGlobalOpts(program)
           const client = await getClient(globals)
-          const params: any = {}
+          const params: ListProductsParams = {}
           if (opts.limit) params.limit = opts.limit
           if (opts.active) params.is_active = true
           if (opts.inactive) params.is_active = false
@@ -119,7 +124,10 @@ export function registerProductsCommands(program: Command): void {
             }
           }
 
-          const data: any = { name: opts.name, price: opts.price }
+          const data: CreateProductInput = {
+            name: opts.name,
+            price: opts.price,
+          }
           if (opts.currency) data.currency = opts.currency
           if (opts.description) data.description = opts.description
           if (opts.recurring) data.is_recurring = true
@@ -195,7 +203,7 @@ export function registerProductsCommands(program: Command): void {
           const globals = getGlobalOpts(program)
           const client = await getClient(globals)
 
-          const data: any = {}
+          const data: UpdateProductInput = {}
           if (opts.name) data.name = opts.name
           if (opts.price) data.price = opts.price
           if (opts.currency) data.currency = opts.currency
