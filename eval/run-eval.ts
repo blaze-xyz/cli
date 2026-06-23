@@ -26,8 +26,14 @@ import * as path from "path"
 import type Anthropic from "@anthropic-ai/sdk"
 import { BlazeOrchestrator } from "../src/agent/orchestrator"
 import { createClient, getDefaultModel } from "../src/agent/llm-provider"
+import { translateError } from "../src/sdk/errors"
 import { judgeAgentAnswer } from "./llm-judge"
 import { EvalCollector, type Verdict } from "./eval-store"
+import {
+  buildHtmlReport,
+  type HtmlReportData,
+  type HtmlReportScenario,
+} from "./html-report"
 
 const MAX_TURNS = 12
 const MAX_TOOL_CALLS = 30
@@ -53,7 +59,21 @@ export interface ScenarioSpec {
   id: string
   tier: "Deterministic" | "Live" | "Agentic" | "Safety"
   context: "consumer" | "business" | "agnostic"
+  /**
+   * Feature category for sidebar grouping in the HTML viewer (per ticket #3476):
+   * Insights | Payments | Business | Safety | Error Handling. prompt_variants
+   * inherit their parent's category via the expandVariants shallow copy.
+   */
+  category?: string
   prompt: string
+  /**
+   * Alternate phrasings of the same intent. When present, the runner tests the
+   * base `prompt` AND each variant as independent sub-runs that inherit ALL of
+   * this scenario's assertions (expected/forbidden tools, params, traits, creds,
+   * tier, context). Tests phrasing-robustness: same intent, different wording,
+   * same expected routing.
+   */
+  prompt_variants?: string[]
   expected_tools: string[]
   /** At least one of these must be called (OR routing). */
   expected_any_tools?: string[]
@@ -64,7 +84,7 @@ export interface ScenarioSpec {
   forbidden_output_traits?: string[]
   /** Deterministic regexes the final answer must NOT match (e.g. raw "HTTP 500" leaks). */
   forbidden_output_patterns?: string[]
-  requires_creds?: ("business" | "consumer" | "readonly")[]
+  requires_creds?: ("business" | "consumer" | "readonly" | "limited")[]
   tolerate_tool_errors?: boolean
   allow_no_tools?: boolean
 }
@@ -96,6 +116,7 @@ export interface ScenarioVerdict {
   id: string
   tier: string
   context: string
+  category?: string
   prompt: string
   verdict: Verdict
   reasons: string[]
@@ -148,6 +169,35 @@ function loadScenarios(filters: {
   })
 }
 
+/**
+ * Pre-loop expansion of phrasing variants. For each scenario carrying a
+ * non-empty `prompt_variants`, emit the base scenario unchanged (implicitly
+ * `#v1`) followed by one derived sub-scenario per variant (`#v2`, `#v3`, …).
+ * Each derived sub-scenario is a shallow copy of the base — inheriting every
+ * assertion — with only its `id` and `prompt` swapped, and `prompt_variants`
+ * cleared. Scenarios without variants pass through unchanged. Order preserved.
+ */
+function expandVariants(scenarios: ScenarioSpec[]): ScenarioSpec[] {
+  const expanded: ScenarioSpec[] = []
+  for (const raw of scenarios) {
+    const variants = raw.prompt_variants
+    if (variants && variants.length > 0) {
+      expanded.push({ ...raw, prompt_variants: undefined })
+      variants.forEach((v, i) => {
+        expanded.push({
+          ...raw,
+          id: `${raw.id}#v${i + 2}`,
+          prompt: v,
+          prompt_variants: undefined,
+        })
+      })
+    } else {
+      expanded.push(raw)
+    }
+  }
+  return expanded
+}
+
 /** Map a scenario's cred requirement to client options, or null → SKIP. */
 function pickClientConfig(
   s: ScenarioSpec
@@ -156,6 +206,11 @@ function pickClientConfig(
   const apiKey = process.env.BLAZE_TEST_API_KEY
   const jwt = process.env.BLAZE_TEST_JWT
   const readonly = process.env.BLAZE_TEST_READONLY_KEY
+  // A deliberately under-scoped business key (e.g. missing BILLS) used by
+  // error-UX scenarios that need a real 403 to test jargon-free handling.
+  const limited = process.env.BLAZE_TEST_LIMITED_KEY
+  if (need.includes("limited"))
+    return limited ? { kind: "limited", opts: { apiKey: limited } } : null
   if (need.includes("readonly"))
     return readonly ? { kind: "readonly", opts: { apiKey: readonly } } : null
   if (need.includes("consumer"))
@@ -239,18 +294,28 @@ async function runScenario(
             content: JSON.stringify(result),
           })
         } catch (err) {
-          const msg = err instanceof Error ? err.message : String(err)
+          // Mirror production (runAgent in src/agent/index.ts): the model never
+          // sees raw HTTP codes / provider jargon — it sees the translated
+          // {kind, retryable, hint, error} shape. The eval must replay this same
+          // path or it would measure pre-Track-B behavior.
+          const t = translateError(err)
+          const translated = {
+            kind: t.kind,
+            retryable: t.retryable,
+            hint: t.hint,
+            error: t.message,
+          }
           entry = {
             turn: turns,
             tool_name: block.name,
             input,
-            result: { error: msg },
+            result: translated,
             is_error: true,
           }
           toolResults.push({
             type: "tool_result",
             tool_use_id: block.id,
-            content: JSON.stringify({ error: msg }),
+            content: JSON.stringify(translated),
             is_error: true,
           })
         }
@@ -443,7 +508,7 @@ async function main(): Promise<void> {
   const model = getDefaultModel()
   const runNonce = Math.round(performance.now()).toString(36)
 
-  const scenarios = loadScenarios(filters)
+  const scenarios = expandVariants(loadScenarios(filters))
   if (scenarios.length === 0) {
     console.error("No scenarios matched the filters.")
     process.exit(2)
@@ -475,6 +540,7 @@ async function main(): Promise<void> {
         id: s.id,
         tier: s.tier,
         context: s.context,
+        category: s.category,
         prompt: s.prompt,
         verdict: "SKIP",
         reasons: [reason],
@@ -504,6 +570,7 @@ async function main(): Promise<void> {
         id: s.id,
         tier: s.tier,
         context: s.context,
+        category: s.category,
         prompt: s.prompt,
         verdict: isInfra ? "SKIP" : "FAIL",
         reasons: [
@@ -575,6 +642,7 @@ async function main(): Promise<void> {
       id: s.id,
       tier: s.tier,
       context: s.context,
+      category: s.category,
       prompt: s.prompt,
       verdict,
       reasons,
@@ -625,6 +693,10 @@ async function main(): Promise<void> {
   if (wantTrace && traces.length > 0) {
     const tracePath = writeTraceDump(traces, baseUrl, model)
     process.stderr.write(`Trace dump: ${tracePath}\n`)
+    // HTML viewer needs the turn-by-turn transcript, which is only collected
+    // under --trace. Build it from the same in-memory verdicts + traces.
+    const htmlPath = writeHtmlReport(verdicts, traces, baseUrl, model)
+    process.stderr.write(`HTML report: ${htmlPath}\n`)
   }
 
   const hardFails = verdicts.filter(v => v.verdict === "FAIL").length
@@ -689,6 +761,43 @@ function writeMarkdown(
     lines.push(
       `| ${icon} ${v.verdict} | ${v.id} | ${v.tier} | ${v.context} | ${seq} | ${judge} | ${note} |`
     )
+  }
+  // Phrasing robustness: group sub-runs by their base id (the part before
+  // `#vN`). Only surface groups that actually produced variants (>1 sub-run and
+  // at least one `#v` id), reporting how many phrasings PASS.
+  const groups = new Map<string, ScenarioVerdict[]>()
+  let anyVariant = false
+  for (const v of verdicts) {
+    const base = v.id.split("#")[0]
+    if (v.id.includes("#")) anyVariant = true
+    const bucket = groups.get(base) ?? []
+    bucket.push(v)
+    groups.set(base, bucket)
+  }
+  const variantGroups = [...groups.entries()].filter(
+    ([base, vs]) => vs.length > 1 && vs.some(v => v.id.startsWith(`${base}#v`))
+  )
+  if (anyVariant && variantGroups.length) {
+    lines.push("")
+    lines.push("## Phrasing robustness")
+    lines.push("")
+    lines.push(
+      "Each base scenario tested across multiple phrasings of the same intent (same expected routing)."
+    )
+    lines.push("")
+    for (const [base, vs] of variantGroups) {
+      const total = vs.length
+      const pass = vs.filter(v => v.verdict === "PASS").length
+      const warn = vs.filter(v => v.verdict === "WARN").length
+      const fail = vs.filter(v => v.verdict === "FAIL").length
+      const skip = vs.filter(v => v.verdict === "SKIP").length
+      const breakdown: string[] = []
+      if (warn) breakdown.push(`${warn} WARN`)
+      if (fail) breakdown.push(`${fail} FAIL`)
+      if (skip) breakdown.push(`${skip} SKIP`)
+      const suffix = breakdown.length ? ` (${breakdown.join(", ")})` : ""
+      lines.push(`- ${base}: ${pass}/${total} variants PASS${suffix}`)
+    }
   }
   const fails = verdicts.filter(
     v => v.verdict === "FAIL" || v.verdict === "WARN"
@@ -794,6 +903,88 @@ function writeTraceDump(
   const tracePath = path.join(REPORT_DIR, `agent-nlp-trace-${stamp}.md`)
   fs.writeFileSync(tracePath, lines.join("\n") + "\n")
   return tracePath
+}
+
+/**
+ * Self-contained interactive HTML viewer (--trace only). Joins the per-scenario
+ * verdicts (deterministic reasons + judge) with the captured turn-by-turn run
+ * (transcript → tool calls/results) into HtmlReportData. SKIP scenarios have no
+ * trace, so they render with empty turns. Reasoning is recovered from the run's
+ * transcript when available.
+ */
+function writeHtmlReport(
+  verdicts: ScenarioVerdict[],
+  traces: Array<{
+    id: string
+    prompt: string
+    context: string
+    verdict: Verdict
+    run: RunResult
+  }>,
+  baseUrl: string,
+  model: string
+): string {
+  const now = new Date()
+  const stamp = now
+    .toISOString()
+    .replace(/[:.]/g, "")
+    .replace("T", "-")
+    .slice(0, 15)
+  const traceById = new Map(traces.map(t => [t.id, t]))
+
+  const scenarios: HtmlReportScenario[] = verdicts.map(v => {
+    const tr = traceById.get(v.id)
+    const turns: HtmlReportScenario["turns"] = []
+    if (tr) {
+      for (const turn of tr.run.transcript) {
+        turns.push({
+          index: turn.turn,
+          reasoning: turn.reasoning || undefined,
+          toolCalls: turn.tools.map(c => ({
+            name: c.tool_name,
+            input: c.input,
+            result: c.result,
+            isError: c.is_error,
+          })),
+        })
+      }
+    }
+    return {
+      id: v.id,
+      tier: v.tier as HtmlReportScenario["tier"],
+      context: v.context,
+      category: v.category ?? "Other",
+      prompt: v.prompt,
+      verdict: v.verdict,
+      toolSequence: v.tool_sequence,
+      finalAnswer: tr?.run.final_answer ?? v.final_answer,
+      reasons: v.reasons,
+      judgeVerdict: v.judge?.verdict,
+      judgeReasoning: v.judge?.reasoning,
+      turns,
+    }
+  })
+
+  const count = (verdict: Verdict) =>
+    verdicts.filter(v => v.verdict === verdict).length
+  const data: HtmlReportData = {
+    generatedAt: now.toISOString(),
+    model,
+    baseUrl,
+    counts: {
+      total: verdicts.length,
+      pass: count("PASS"),
+      fail: count("FAIL"),
+      warn: count("WARN"),
+      skip: count("SKIP"),
+    },
+    scenarios,
+  }
+
+  fs.mkdirSync(REPORT_DIR, { recursive: true })
+  const htmlPath = path.join(REPORT_DIR, `agent-nlp-report-${stamp}.html`)
+  fs.writeFileSync(htmlPath, buildHtmlReport(data))
+  return htmlPath
 }
 
 main().catch(err => {

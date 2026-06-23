@@ -1,5 +1,6 @@
 import type Anthropic from "@anthropic-ai/sdk"
 import { BlazeClient } from "../sdk/client"
+import { translateError } from "../sdk/errors"
 import { createClient, getDefaultModel } from "./llm-provider"
 import { MemoryStore } from "./memory"
 import { buildSystemPrompt } from "./system-prompt"
@@ -14,15 +15,41 @@ const MAX_TURNS = 20
 const MAX_TOOL_CALLS = 50
 const MAX_INPUT_TOKENS = 100_000
 
+type LoopBoundReason = "max_turns" | "max_tool_calls" | "max_input_tokens"
+
+/**
+ * Builds the user-facing message printed when the agent loop hits a ceiling.
+ * Direct, no apologies, tells the user what to do next.
+ */
+export function buildLoopBoundMessage(reason: LoopBoundReason): string {
+  switch (reason) {
+    case "max_turns":
+      return "I couldn't finish this in one go — it needed more steps than I'm allowed per request (turn limit). Here's what I completed so far. Break it into smaller requests to continue."
+    case "max_tool_calls":
+      return "I couldn't finish this in one go — it needed more actions than I'm allowed per request (tool-call limit). Here's what I completed so far. Break it into smaller requests to continue."
+    case "max_input_tokens":
+      return "I couldn't finish this in one go — this request grew too large to keep going (context limit). Here's what I completed so far. Break it into smaller requests to continue."
+  }
+}
+
+export interface RunAgentOptions {
+  maxTurns?: number
+  maxToolCalls?: number
+}
+
 export async function runAgent(
   userInput: string,
-  client: BlazeClient
+  client: BlazeClient,
+  opts?: RunAgentOptions
 ): Promise<void> {
+  const maxTurns = opts?.maxTurns ?? MAX_TURNS
+  const maxToolCalls = opts?.maxToolCalls ?? MAX_TOOL_CALLS
+
   const anthropic = createClient()
   const memory = new MemoryStore()
   const model = getDefaultModel()
   const tools = buildTools(client, memory)
-  const systemPrompt = buildSystemPrompt()
+  const systemPrompt = buildSystemPrompt(client.authContext)
 
   const messages: Anthropic.MessageParam[] = [
     { role: "user", content: userInput },
@@ -35,19 +62,22 @@ export async function runAgent(
   // Agentic loop with bounds
   // eslint-disable-next-line no-constant-condition
   while (true) {
-    if (turns >= MAX_TURNS) {
+    if (turns >= maxTurns) {
+      process.stdout.write(`\n${buildLoopBoundMessage("max_turns")}\n`)
       process.stderr.write(
-        `\n[agent] Hit MAX_TURNS=${MAX_TURNS}. Stopping. If this was a long task, split it up.\n`
+        `\n[agent] Hit MAX_TURNS=${maxTurns}. Stopping. If this was a long task, split it up.\n`
       )
       return
     }
-    if (toolCalls >= MAX_TOOL_CALLS) {
+    if (toolCalls >= maxToolCalls) {
+      process.stdout.write(`\n${buildLoopBoundMessage("max_tool_calls")}\n`)
       process.stderr.write(
-        `\n[agent] Hit MAX_TOOL_CALLS=${MAX_TOOL_CALLS}. Stopping.\n`
+        `\n[agent] Hit MAX_TOOL_CALLS=${maxToolCalls}. Stopping.\n`
       )
       return
     }
     if (cumulativeInputTokens >= MAX_INPUT_TOKENS) {
+      process.stdout.write(`\n${buildLoopBoundMessage("max_input_tokens")}\n`)
       process.stderr.write(
         `\n[agent] Hit MAX_INPUT_TOKENS=${MAX_INPUT_TOKENS}. Stopping.\n`
       )
@@ -83,7 +113,7 @@ export async function runAgent(
       for (const block of response.content) {
         if (block.type === "tool_use") {
           toolCalls++
-          if (toolCalls > MAX_TOOL_CALLS) break
+          if (toolCalls > maxToolCalls) break
           try {
             const result = await executeTool(
               block.name,
@@ -97,11 +127,15 @@ export async function runAgent(
               content: JSON.stringify(result),
             })
           } catch (err) {
+            const t = translateError(err)
             toolResults.push({
               type: "tool_result",
               tool_use_id: block.id,
               content: JSON.stringify({
-                error: err instanceof Error ? err.message : String(err),
+                kind: t.kind,
+                retryable: t.retryable,
+                hint: t.hint,
+                error: t.message,
               }),
               is_error: true,
             })

@@ -14,8 +14,11 @@ export function registerAccountingCommands(program: Command): void {
 
   accounting
     .command("connect")
-    .description("Connect QuickBooks or Xero")
-    .requiredOption("--provider <provider>", "Provider: quickbooks or xero")
+    .description("Connect QuickBooks, Xero, or Puzzle")
+    .requiredOption(
+      "--provider <provider>",
+      "Provider: quickbooks, xero, or puzzle"
+    )
     .action(async (opts: { provider: string }) => {
       try {
         const globals = getGlobalOpts(program)
@@ -104,6 +107,7 @@ export function registerAccountingCommands(program: Command): void {
     .description("Get Profit & Loss report")
     .requiredOption("--start-date <date>", "Start date (ISO 8601)")
     .requiredOption("--end-date <date>", "End date (ISO 8601)")
+    .option("--basis <basis>", "Accounting basis: cash or accrual")
     .option(
       "--provider <provider>",
       "Specific provider (if multiple connected)"
@@ -112,6 +116,7 @@ export function registerAccountingCommands(program: Command): void {
       async (opts: {
         startDate: string
         endDate: string
+        basis?: "cash" | "accrual"
         provider?: string
       }) => {
         try {
@@ -121,6 +126,7 @@ export function registerAccountingCommands(program: Command): void {
           const result = await client.getProfitAndLoss({
             start_date: opts.startDate,
             end_date: opts.endDate,
+            basis: opts.basis,
             provider: opts.provider,
           })
           formatOutput(result, globals.format)
@@ -134,21 +140,29 @@ export function registerAccountingCommands(program: Command): void {
     .command("balance-sheet")
     .description("Get Balance Sheet report")
     .option("--as-of <date>", "Report date (default: today)")
+    .option("--basis <basis>", "Accounting basis: cash or accrual")
     .option("--provider <provider>", "Specific provider")
-    .action(async (opts: { asOf?: string; provider?: string }) => {
-      try {
-        const globals = getGlobalOpts(program)
-        await requireBusinessContext(globals)
-        const client = await getClient(globals)
-        const result = await client.getBalanceSheet({
-          as_of: opts.asOf,
-          provider: opts.provider,
-        })
-        formatOutput(result, globals.format)
-      } catch (err) {
-        handleError(err)
+    .action(
+      async (opts: {
+        asOf?: string
+        basis?: "cash" | "accrual"
+        provider?: string
+      }) => {
+        try {
+          const globals = getGlobalOpts(program)
+          await requireBusinessContext(globals)
+          const client = await getClient(globals)
+          const result = await client.getBalanceSheet({
+            as_of: opts.asOf,
+            basis: opts.basis,
+            provider: opts.provider,
+          })
+          formatOutput(result, globals.format)
+        } catch (err) {
+          handleError(err)
+        }
       }
-    })
+    )
 
   accounting
     .command("chart-of-accounts")
@@ -163,6 +177,369 @@ export function registerAccountingCommands(program: Command): void {
         const result = await client.getChartOfAccounts({
           provider: opts.provider,
         })
+        formatOutput(result, globals.format)
+      } catch (err) {
+        handleError(err)
+      }
+    })
+
+  accounting
+    .command("trial-balance")
+    .description("Get Trial Balance report")
+    .requiredOption("--start-date <date>", "Start date (ISO 8601)")
+    .requiredOption("--end-date <date>", "End date (ISO 8601)")
+    .option("--basis <basis>", "Accounting basis: cash or accrual")
+    .option("--provider <provider>", "Specific provider")
+    .action(
+      async (opts: {
+        startDate: string
+        endDate: string
+        basis?: "cash" | "accrual"
+        provider?: string
+      }) => {
+        try {
+          const globals = getGlobalOpts(program)
+          await requireBusinessContext(globals)
+          const client = await getClient(globals)
+          const result = await client.getTrialBalance({
+            start_date: opts.startDate,
+            end_date: opts.endDate,
+            basis: opts.basis,
+            provider: opts.provider,
+          })
+          formatOutput(result, globals.format)
+        } catch (err) {
+          handleError(err)
+        }
+      }
+    )
+
+  accounting
+    .command("cash-activity")
+    .description("Get Cash Activity Statement")
+    .requiredOption("--start-date <date>", "Start date (ISO 8601)")
+    .requiredOption("--end-date <date>", "End date (ISO 8601)")
+    .option("--provider <provider>", "Specific provider")
+    .action(
+      async (opts: {
+        startDate: string
+        endDate: string
+        provider?: string
+      }) => {
+        try {
+          const globals = getGlobalOpts(program)
+          await requireBusinessContext(globals)
+          const client = await getClient(globals)
+          const result = await client.getCashActivity({
+            start_date: opts.startDate,
+            end_date: opts.endDate,
+            provider: opts.provider,
+          })
+          formatOutput(result, globals.format)
+        } catch (err) {
+          handleError(err)
+        }
+      }
+    )
+
+  accounting
+    .command("vendor-spending")
+    .description("Get Vendor Spending report")
+    .requiredOption("--start-date <date>", "Start date (ISO 8601)")
+    .requiredOption("--end-date <date>", "End date (ISO 8601)")
+    .option("--provider <provider>", "Specific provider")
+    .action(
+      async (opts: {
+        startDate: string
+        endDate: string
+        provider?: string
+      }) => {
+        try {
+          const globals = getGlobalOpts(program)
+          await requireBusinessContext(globals)
+          const client = await getClient(globals)
+          const result = await client.getVendorSpending({
+            start_date: opts.startDate,
+            end_date: opts.endDate,
+            provider: opts.provider,
+          })
+          formatOutput(result, globals.format)
+        } catch (err) {
+          handleError(err)
+        }
+      }
+    )
+
+  accounting
+    .command("transactions")
+    .description("List accounting transactions history")
+    .option("--start-date <date>", "Start date (ISO 8601)")
+    .option("--end-date <date>", "End date (ISO 8601)")
+    .option("--limit <number>", "Maximum number of results")
+    .option("--offset <number>", "Pagination offset")
+    .option("--provider <provider>", "Specific provider")
+    .action(
+      async (opts: {
+        startDate?: string
+        endDate?: string
+        limit?: string
+        offset?: string
+        provider?: string
+      }) => {
+        try {
+          const globals = getGlobalOpts(program)
+          await requireBusinessContext(globals)
+          const client = await getClient(globals)
+          const result = await client.getAccountingTransactions({
+            start_date: opts.startDate,
+            end_date: opts.endDate,
+            limit: opts.limit ? Number(opts.limit) : undefined,
+            offset: opts.offset ? Number(opts.offset) : undefined,
+            provider: opts.provider,
+          })
+          formatOutput(result, globals.format)
+        } catch (err) {
+          handleError(err)
+        }
+      }
+    )
+
+  accounting
+    .command("bills")
+    .description("List accounting bills history")
+    .option("--status <status>", "Filter by status")
+    .option("--start-date <date>", "Start date (ISO 8601)")
+    .option("--end-date <date>", "End date (ISO 8601)")
+    .option("--limit <number>", "Maximum number of results")
+    .option("--offset <number>", "Pagination offset")
+    .option("--provider <provider>", "Specific provider")
+    .action(
+      async (opts: {
+        status?: string
+        startDate?: string
+        endDate?: string
+        limit?: string
+        offset?: string
+        provider?: string
+      }) => {
+        try {
+          const globals = getGlobalOpts(program)
+          await requireBusinessContext(globals)
+          const client = await getClient(globals)
+          const result = await client.getAccountingBills({
+            status: opts.status,
+            start_date: opts.startDate,
+            end_date: opts.endDate,
+            limit: opts.limit ? Number(opts.limit) : undefined,
+            offset: opts.offset ? Number(opts.offset) : undefined,
+            provider: opts.provider,
+          })
+          formatOutput(result, globals.format)
+        } catch (err) {
+          handleError(err)
+        }
+      }
+    )
+
+  accounting
+    .command("invoices")
+    .description("List accounting invoices history")
+    .option("--status <status>", "Filter by status")
+    .option("--start-date <date>", "Start date (ISO 8601)")
+    .option("--end-date <date>", "End date (ISO 8601)")
+    .option("--limit <number>", "Maximum number of results")
+    .option("--offset <number>", "Pagination offset")
+    .option("--provider <provider>", "Specific provider")
+    .action(
+      async (opts: {
+        status?: string
+        startDate?: string
+        endDate?: string
+        limit?: string
+        offset?: string
+        provider?: string
+      }) => {
+        try {
+          const globals = getGlobalOpts(program)
+          await requireBusinessContext(globals)
+          const client = await getClient(globals)
+          const result = await client.getAccountingInvoices({
+            status: opts.status,
+            start_date: opts.startDate,
+            end_date: opts.endDate,
+            limit: opts.limit ? Number(opts.limit) : undefined,
+            offset: opts.offset ? Number(opts.offset) : undefined,
+            provider: opts.provider,
+          })
+          formatOutput(result, globals.format)
+        } catch (err) {
+          handleError(err)
+        }
+      }
+    )
+
+  accounting
+    .command("sync-bills")
+    .description("Pull bills from the connected accounting provider into Blaze")
+    .option("--provider <provider>", "Specific provider")
+    .action(async (opts: { provider?: string }) => {
+      try {
+        const globals = getGlobalOpts(program)
+        await requireBusinessContext(globals)
+        const client = await getClient(globals)
+        const result = await client.syncBillsFromAccounting({
+          provider: opts.provider,
+        })
+        formatOutput(result, globals.format)
+      } catch (err) {
+        handleError(err)
+      }
+    })
+
+  accounting
+    .command("sync-invoices")
+    .description(
+      "Pull invoices from the connected accounting provider into Blaze"
+    )
+    .option("--provider <provider>", "Specific provider")
+    .action(async (opts: { provider?: string }) => {
+      try {
+        const globals = getGlobalOpts(program)
+        await requireBusinessContext(globals)
+        const client = await getClient(globals)
+        const result = await client.syncInvoicesFromAccounting({
+          provider: opts.provider,
+        })
+        formatOutput(result, globals.format)
+      } catch (err) {
+        handleError(err)
+      }
+    })
+
+  accounting
+    .command("sync-vendors")
+    .description("Reconcile vendors with the connected accounting provider")
+    .option("--provider <provider>", "Specific provider")
+    .action(async (opts: { provider?: string }) => {
+      try {
+        const globals = getGlobalOpts(program)
+        await requireBusinessContext(globals)
+        const client = await getClient(globals)
+        const result = await client.syncVendors({ provider: opts.provider })
+        formatOutput(result, globals.format)
+      } catch (err) {
+        handleError(err)
+      }
+    })
+
+  accounting
+    .command("sync-customers")
+    .description("Reconcile customers with the connected accounting provider")
+    .option("--provider <provider>", "Specific provider")
+    .action(async (opts: { provider?: string }) => {
+      try {
+        const globals = getGlobalOpts(program)
+        await requireBusinessContext(globals)
+        const client = await getClient(globals)
+        const result = await client.syncCustomers({ provider: opts.provider })
+        formatOutput(result, globals.format)
+      } catch (err) {
+        handleError(err)
+      }
+    })
+
+  accounting
+    .command("reconcile")
+    .description(
+      "Reconcile the connected provider's books against Blaze's internal ledger for a period (Puzzle only)"
+    )
+    .requiredOption(
+      "--start <date>",
+      "Period start (ISO 8601, e.g. 2026-01-01)"
+    )
+    .requiredOption("--end <date>", "Period end (ISO 8601, e.g. 2026-01-31)")
+    .option("--provider <provider>", "Specific provider")
+    .action(async (opts: { start: string; end: string; provider?: string }) => {
+      try {
+        const globals = getGlobalOpts(program)
+        await requireBusinessContext(globals)
+        const client = await getClient(globals)
+        const result = await client.reconcileAccounts({
+          period_start: opts.start,
+          period_end: opts.end,
+          provider: opts.provider,
+        })
+        formatOutput(result, globals.format)
+      } catch (err) {
+        handleError(err)
+      }
+    })
+
+  accounting
+    .command("close-status")
+    .description(
+      "Show the month-end close status for a period (reconciliation rate + trial-balance-balances; Puzzle only)"
+    )
+    .requiredOption(
+      "--start <date>",
+      "Period start (ISO 8601, e.g. 2026-01-01)"
+    )
+    .requiredOption("--end <date>", "Period end (ISO 8601, e.g. 2026-01-31)")
+    .option("--provider <provider>", "Specific provider")
+    .action(async (opts: { start: string; end: string; provider?: string }) => {
+      try {
+        const globals = getGlobalOpts(program)
+        await requireBusinessContext(globals)
+        const client = await getClient(globals)
+        const result = await client.getCloseStatus({
+          start: opts.start,
+          end: opts.end,
+          provider: opts.provider,
+        })
+        formatOutput(result, globals.format)
+      } catch (err) {
+        handleError(err)
+      }
+    })
+
+  accounting
+    .command("push-bill")
+    .description(
+      "Push a Blaze bill to the connected provider's books (Blaze → Puzzle)"
+    )
+    .requiredOption("--bill-id <id>", "Blaze bill id to push")
+    .option("--provider <provider>", "Specific provider")
+    .action(async (opts: { billId: string; provider?: string }) => {
+      try {
+        const globals = getGlobalOpts(program)
+        await requireBusinessContext(globals)
+        const client = await getClient(globals)
+        const result = await client.pushBillToAccounting(
+          opts.billId,
+          opts.provider
+        )
+        formatOutput(result, globals.format)
+      } catch (err) {
+        handleError(err)
+      }
+    })
+
+  accounting
+    .command("push-invoice")
+    .description(
+      "Push a Blaze invoice to the connected provider's books (Blaze → Puzzle)"
+    )
+    .requiredOption("--invoice-id <id>", "Blaze invoice id to push")
+    .option("--provider <provider>", "Specific provider")
+    .action(async (opts: { invoiceId: string; provider?: string }) => {
+      try {
+        const globals = getGlobalOpts(program)
+        await requireBusinessContext(globals)
+        const client = await getClient(globals)
+        const result = await client.pushInvoiceToAccounting(
+          opts.invoiceId,
+          opts.provider
+        )
         formatOutput(result, globals.format)
       } catch (err) {
         handleError(err)

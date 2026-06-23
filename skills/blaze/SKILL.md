@@ -38,6 +38,9 @@ Blaze is a global payments platform. This skill gives you full access to manage 
 ### "Send $X to @user"
 → `mcp__blaze__blaze_send_money` (P2P via blazetag)
 
+### "Withdraw to my own bank/card" / "Cash out my balance" / "Move money to my bank"
+→ `mcp__blaze__blaze_list_connected_payment_methods` to find the destination, then — after confirming the amount AND destination with the user — `mcp__blaze__blaze_withdraw_to_payment_method` with `confirm: true`. **IRREVERSIBLE.** Requires a personal/bearer session. This withdraws the user's OWN balance to their OWN bank/card — distinct from `blaze_create_withdrawal` (business payout to a customer's external account).
+
 ### "Pay a bill" / "What bills are due?"
 → `mcp__blaze__blaze_list_bills` then `mcp__blaze__blaze_quote_bill_payment` then `mcp__blaze__blaze_pay_bill`
 

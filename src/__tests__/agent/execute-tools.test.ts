@@ -16,6 +16,41 @@ function createMockClient(): BlazeClient {
     payContact: { id: "tr_1", status: "PENDING" },
     sendPayment: { id: "pay_1", status: "PENDING" },
     createJournalEntry: { id: "je_1" },
+    listConnectedPaymentMethods: {
+      methods: [
+        {
+          id: "pm_1",
+          type: "Card",
+          displayName: "Test Card",
+          maskedAccountNumber: "1234",
+          canDeposit: true,
+          canWithdraw: true,
+          isDefault: true,
+          rampVerificationStatus: "Completed",
+        },
+      ],
+      defaultWithdrawalMethodId: "pm_1",
+      countryCode: "US",
+    },
+    withdrawToPaymentMethod: {
+      status: "PENDING",
+      rampTransferId: "rt_1",
+    },
+    checkWithdrawalLimits: {
+      meetsMinimum: true,
+      isUnderLimit: true,
+      minimumAmountCents: 500,
+    },
+    getRampTransfer: { id: "rt_1", feeCollections: [] },
+    getApplicableWithdrawalFee: {
+      totalFeeCents: 200,
+      displayName: "Card Withdrawal Fee",
+      flatFeeCents: 0,
+      percentageFeeCents: 0,
+      percentageRate: 0.02,
+      minFeeCents: 200,
+      configId: "c",
+    },
   }
   return new Proxy(
     {},
@@ -57,8 +92,21 @@ const TOOL_INPUTS: Record<string, Record<string, unknown>> = {
   blaze_get_me: {},
   blaze_get_balance: {},
   blaze_list_contacts: { search: "bob", limit: 10 },
-  blaze_add_contact: { name: "Bob", type: "blaze", blazetag: "@bob" },
+  blaze_add_contact: {
+    name: "Bob Smith",
+    phone: "+15551234567",
+    type: "crypto",
+    wallet_address: "0x0000000000000000000000000000000000000000",
+    network: "ethereum",
+  },
   blaze_pay_contact: { contact_id: "c_1", amount: 100, currency: "USD" },
+  blaze_list_connected_payment_methods: {},
+  blaze_withdraw: { payment_method_id: "pm_1", amount: 50, currency: "USD" },
+  blaze_estimate_withdrawal_fee: {
+    payment_method_id: "pm_1",
+    amount: 50,
+    currency: "USD",
+  },
   blaze_delete_contact: { id: "c_1" },
   blaze_search_users: { query: "bob", limit: 5 },
   blaze_send_payment: { blazetag: "@bob", amount: 100, currency: "USD" },
@@ -117,6 +165,22 @@ const TOOL_INPUTS: Record<string, Record<string, unknown>> = {
   },
   blaze_get_balance_sheet: { as_of: "2026-06-01" },
   blaze_get_chart_of_accounts: {},
+  blaze_get_trial_balance: {
+    start_date: "2026-01-01",
+    end_date: "2026-06-30",
+    basis: "accrual",
+  },
+  blaze_get_cash_activity: {
+    start_date: "2026-01-01",
+    end_date: "2026-06-30",
+  },
+  blaze_get_vendor_spending: {
+    start_date: "2026-01-01",
+    end_date: "2026-06-30",
+  },
+  blaze_list_accounting_transactions: { limit: 10, offset: 0 },
+  blaze_list_accounting_bills: { status: "OPEN", limit: 10 },
+  blaze_list_accounting_invoices: { status: "OPEN", limit: 10 },
   blaze_list_voice_calls: { limit: 5 },
   blaze_propose_voice_call: {
     customer_id: "cust_1",
@@ -124,6 +188,22 @@ const TOOL_INPUTS: Record<string, Record<string, unknown>> = {
     reason: "overdue",
   },
   blaze_schedule_voice_call: { job_id: "job_1", execute: false },
+  blaze_sync_bills_from_accounting: { provider: "puzzle" },
+  blaze_sync_invoices_from_accounting: { provider: "puzzle" },
+  blaze_sync_vendors: { provider: "puzzle" },
+  blaze_sync_customers: { provider: "puzzle" },
+  blaze_reconcile_accounts: {
+    period_start: "2026-01-01",
+    period_end: "2026-01-31",
+    provider: "puzzle",
+  },
+  blaze_accounting_close_status: {
+    start: "2026-01-01",
+    end: "2026-01-31",
+    provider: "puzzle",
+  },
+  blaze_push_bill_to_accounting: { bill_id: "bb_1", confirm: true },
+  blaze_push_invoice_to_accounting: { invoice_id: "bi_1", confirm: true },
   blaze_sync_transaction_to_accounting: {
     date: "2026-06-01",
     confirm: true,
@@ -293,6 +373,160 @@ describe("agent executeTool — branch behaviours", () => {
     expect(result.code).toBe(502)
   })
 
+  it("blaze_pay_contact routes a Stablecoin contact to payContactCrypto and flags irreversibility", async () => {
+    const client = createMockClient()
+    const memory = createMockMemory()
+    ;(
+      client as unknown as { getContact: jest.Mock }
+    ).getContact.mockResolvedValue({
+      type: "Stablecoin",
+      bank_accounts: [],
+      crypto_addresses: [
+        { id: "addr_1", network: "Ethereum", address: "0xAbC0000000000000" },
+      ],
+    })
+    const payCrypto = (client as unknown as { payContactCrypto: jest.Mock })
+      .payContactCrypto
+    payCrypto.mockResolvedValue({ id: "tr_crypto_1", status: "PENDING" })
+
+    const result = (await executeTool(
+      "blaze_pay_contact",
+      { contact_id: "c_1", amount: 25 },
+      client,
+      memory
+    )) as {
+      success: boolean
+      transferId: string
+      network: string
+      irreversible: boolean
+      warning: string
+    }
+
+    expect(payCrypto).toHaveBeenCalledWith("c_1", "addr_1", {
+      usdcAmountInCents: 2500,
+      amount: 25,
+      note: undefined,
+    })
+    expect(result.success).toBe(true)
+    expect(result.transferId).toBe("tr_crypto_1")
+    expect(result.network).toBe("Ethereum")
+    expect(result.irreversible).toBe(true)
+    expect(result.warning).toContain("irreversible")
+  })
+
+  it("blaze_pay_contact rejects a crypto send below the $1 USDC minimum", async () => {
+    const client = createMockClient()
+    const memory = createMockMemory()
+    ;(
+      client as unknown as { getContact: jest.Mock }
+    ).getContact.mockResolvedValue({
+      type: "Stablecoin",
+      bank_accounts: [],
+      crypto_addresses: [
+        { id: "addr_1", network: "Ethereum", address: "0xAbC0000000000000" },
+      ],
+    })
+    const payCrypto = (client as unknown as { payContactCrypto: jest.Mock })
+      .payContactCrypto
+
+    const result = (await executeTool(
+      "blaze_pay_contact",
+      { contact_id: "c_1", amount: 0.5 },
+      client,
+      memory
+    )) as { success: boolean; error: string }
+
+    expect(result.success).toBe(false)
+    expect(result.error).toContain("Minimum crypto send")
+    expect(payCrypto).not.toHaveBeenCalled()
+  })
+
+  it("blaze_pay_contact blocks a $5,000 crypto send ($3,000 or more) when beneficiary data is missing", async () => {
+    const client = createMockClient()
+    const memory = createMockMemory()
+    ;(
+      client as unknown as { getContact: jest.Mock }
+    ).getContact.mockResolvedValue({
+      type: "Stablecoin",
+      bank_accounts: [],
+      crypto_addresses: [
+        { id: "addr_1", network: "Ethereum", address: "0xAbC0000000000000" },
+      ],
+    })
+    const payCrypto = (client as unknown as { payContactCrypto: jest.Mock })
+      .payContactCrypto
+
+    const result = (await executeTool(
+      "blaze_pay_contact",
+      { contact_id: "c_1", amount: 5000 },
+      client,
+      memory
+    )) as { success: boolean; error: string }
+
+    expect(result.success).toBe(false)
+    expect(result.error).toContain("beneficiary details")
+    expect(payCrypto).not.toHaveBeenCalled()
+  })
+
+  it("blaze_pay_contact blocks a crypto send of exactly $3,000 (at the threshold) when beneficiary data is missing", async () => {
+    const client = createMockClient()
+    const memory = createMockMemory()
+    ;(
+      client as unknown as { getContact: jest.Mock }
+    ).getContact.mockResolvedValue({
+      type: "Stablecoin",
+      bank_accounts: [],
+      crypto_addresses: [
+        { id: "addr_1", network: "Ethereum", address: "0xAbC0000000000000" },
+      ],
+    })
+    const payCrypto = (client as unknown as { payContactCrypto: jest.Mock })
+      .payContactCrypto
+
+    const result = (await executeTool(
+      "blaze_pay_contact",
+      { contact_id: "c_1", amount: 3000 },
+      client,
+      memory
+    )) as { success: boolean; error: string }
+
+    expect(result.success).toBe(false)
+    expect(result.error).toContain("beneficiary details")
+    expect(payCrypto).not.toHaveBeenCalled()
+  })
+
+  it("blaze_pay_contact allows a crypto send just below $3,000 without beneficiary data", async () => {
+    const client = createMockClient()
+    const memory = createMockMemory()
+    ;(
+      client as unknown as { getContact: jest.Mock }
+    ).getContact.mockResolvedValue({
+      type: "Stablecoin",
+      bank_accounts: [],
+      crypto_addresses: [
+        { id: "addr_1", network: "Ethereum", address: "0xAbC0000000000000" },
+      ],
+    })
+    const payCrypto = (client as unknown as { payContactCrypto: jest.Mock })
+      .payContactCrypto
+    payCrypto.mockResolvedValue({ id: "tr_crypto_2", status: "PENDING" })
+
+    const result = (await executeTool(
+      "blaze_pay_contact",
+      { contact_id: "c_1", amount: 2999 },
+      client,
+      memory
+    )) as { success: boolean; transferId: string }
+
+    expect(payCrypto).toHaveBeenCalledWith("c_1", "addr_1", {
+      usdcAmountInCents: 299900,
+      amount: 2999,
+      note: undefined,
+    })
+    expect(result.success).toBe(true)
+    expect(result.transferId).toBe("tr_crypto_2")
+  })
+
   it("blaze_sync_transaction_to_accounting requires confirm=true", async () => {
     const client = createMockClient()
     const memory = createMockMemory()
@@ -310,6 +544,45 @@ describe("agent executeTool — branch behaviours", () => {
 
     expect(result.success).toBe(false)
     expect(result.error).toContain("confirm")
+  })
+
+  it("blaze_push_bill_to_accounting requires confirm=true before calling the client", async () => {
+    const client = createMockClient()
+    const memory = createMockMemory()
+
+    const result = (await executeTool(
+      "blaze_push_bill_to_accounting",
+      { bill_id: "bb_1", confirm: false },
+      client,
+      memory
+    )) as { success: boolean; error: string }
+
+    expect(result.success).toBe(false)
+    expect(result.error).toContain("confirm")
+    expect(
+      (client as unknown as { pushBillToAccounting: jest.Mock })
+        .pushBillToAccounting
+    ).not.toHaveBeenCalled()
+  })
+
+  it("blaze_push_bill_to_accounting forwards the bill id and provider when confirmed", async () => {
+    // Arrange
+    const client = createMockClient()
+    const memory = createMockMemory()
+
+    // Act
+    await executeTool(
+      "blaze_push_bill_to_accounting",
+      { bill_id: "bb_1", provider: "puzzle", confirm: true },
+      client,
+      memory
+    )
+
+    // Assert
+    expect(
+      (client as unknown as { pushBillToAccounting: jest.Mock })
+        .pushBillToAccounting
+    ).toHaveBeenCalledWith("bb_1", "puzzle")
   })
 
   it("blaze_sync_transaction_to_accounting rejects unbalanced entries", async () => {
@@ -332,5 +605,81 @@ describe("agent executeTool — branch behaviours", () => {
 
     expect(result.success).toBe(false)
     expect(result.error).toContain("must balance")
+  })
+
+  it("blaze_get_trial_balance execute calls client.getTrialBalance with the basis and provider args", async () => {
+    // Arrange
+    const client = createMockClient()
+    const memory = createMockMemory()
+
+    // Act
+    await executeTool(
+      "blaze_get_trial_balance",
+      {
+        start_date: "2026-01-01",
+        end_date: "2026-06-30",
+        basis: "cash",
+        provider: "puzzle",
+      },
+      client,
+      memory
+    )
+
+    // Assert
+    expect(
+      (client as unknown as { getTrialBalance: jest.Mock }).getTrialBalance
+    ).toHaveBeenCalledWith({
+      start_date: "2026-01-01",
+      end_date: "2026-06-30",
+      basis: "cash",
+      provider: "puzzle",
+    })
+  })
+
+  it("blaze_sync_bills_from_accounting execute calls client.syncBillsFromAccounting with the provider arg", async () => {
+    // Arrange
+    const client = createMockClient()
+    const memory = createMockMemory()
+
+    // Act
+    await executeTool(
+      "blaze_sync_bills_from_accounting",
+      { provider: "puzzle" },
+      client,
+      memory
+    )
+
+    // Assert
+    expect(
+      (client as unknown as { syncBillsFromAccounting: jest.Mock })
+        .syncBillsFromAccounting
+    ).toHaveBeenCalledWith({ provider: "puzzle" })
+  })
+
+  it("blaze_reconcile_accounts execute calls client.reconcileAccounts with the period and provider args", async () => {
+    // Arrange
+    const client = createMockClient()
+    const memory = createMockMemory()
+
+    // Act
+    await executeTool(
+      "blaze_reconcile_accounts",
+      {
+        period_start: "2026-01-01",
+        period_end: "2026-01-31",
+        provider: "puzzle",
+      },
+      client,
+      memory
+    )
+
+    // Assert
+    expect(
+      (client as unknown as { reconcileAccounts: jest.Mock }).reconcileAccounts
+    ).toHaveBeenCalledWith({
+      period_start: "2026-01-01",
+      period_end: "2026-01-31",
+      provider: "puzzle",
+    })
   })
 })

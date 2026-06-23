@@ -13,8 +13,11 @@ describeE2E("E2E: Balance", () => {
     const balance = await ctx.client.getBalance()
     expect(balance).toHaveProperty("available")
     expect(balance).toHaveProperty("pending")
-    expect(balance).toHaveProperty("currency")
-    expect(typeof balance.available).toBe("number")
-    expect(typeof balance.pending).toBe("number")
+    // Balance returns nested CurrencyAmount objects
+    const available = balance.available as { amount: number; currency: string }
+    const pending = balance.pending as { amount: number; currency: string }
+    expect(typeof available.amount).toBe("number")
+    expect(typeof available.currency).toBe("string")
+    expect(typeof pending.amount).toBe("number")
   })
 })

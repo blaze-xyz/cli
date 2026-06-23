@@ -1,8 +1,19 @@
 import type Anthropic from "@anthropic-ai/sdk"
+import type { AgentContactInput } from "../sdk/contact-payload"
 import type { BlazeClient } from "../sdk/client"
 import type { ScenarioAdjustment } from "../sdk/types"
 import type { MemoryStore } from "./memory"
+import { buildCreateContactPayload } from "../sdk/contact-payload"
 import { USD_RATES, estimateUsdAmount } from "../constants/fx-rates"
+import {
+  deriveWithdrawalAmounts,
+  formatConnectedPaymentMethodLabel,
+  estimateWithdrawalArrival,
+  humanizeWithdrawIneligibilityReason,
+  mapToPaymentMethodType,
+  totalFeeCents,
+} from "../constants/withdrawal-format"
+import { annotateSpendingSummary } from "./utils/format.utils"
 
 type ToolInput = Record<string, unknown>
 
@@ -182,17 +193,34 @@ const toolDefs: ToolDef[] = [
     schema: {
       name: "blaze_add_contact",
       description:
-        "Add a new contact (recipient) — Blaze user, bank account, CLABE, or crypto wallet.",
-      input_schema: props(["name"], {
-        name: { type: "string", description: "Contact's display name" },
+        "Add a new contact (recipient) — bank account, CLABE, or crypto wallet. A full name (first and last) and a phone number are always required. Adding a Blaze user by blazetag is NOT supported here yet.",
+      input_schema: props(["name", "phone", "type"], {
+        name: {
+          type: "string",
+          description:
+            "Contact's full name (first and last, e.g. 'Ada Lovelace'). A single name is not accepted — ask the user for the full name.",
+        },
+        phone: {
+          type: "string",
+          description:
+            "Contact's phone number in E.164 format, e.g. +14155550123. Required for every contact.",
+        },
+        category: {
+          type: "string",
+          enum: ["Personal", "Business"],
+          description: "Contact category (default Personal)",
+        },
+        email: { type: "string", description: "Contact's email address" },
         blazetag: {
           type: "string",
-          description: "Blaze blazetag, e.g. @john",
+          description:
+            "Blaze blazetag, e.g. @john. NOT supported for agent-created contacts yet.",
         },
         type: {
           type: "string",
-          enum: ["blaze", "bank", "clabe", "crypto"],
-          description: "Contact type",
+          enum: ["bank", "clabe", "crypto"],
+          description:
+            "Contact type: bank (US bank account), clabe (Mexican CLABE), or crypto (stablecoin wallet)",
         },
         routing_number: {
           type: "string",
@@ -209,28 +237,65 @@ const toolDefs: ToolDef[] = [
         },
         network: {
           type: "string",
-          description: "Blockchain network, e.g. stellar, ethereum",
+          enum: [
+            "stellar",
+            "ethereum",
+            "polygon",
+            "solana",
+            "base",
+            "arbitrum",
+            "optimism",
+            "avalanche",
+          ],
+          description:
+            "Blockchain network for a crypto contact (one of: stellar, ethereum, polygon, solana, base, arbitrum, optimism, avalanche)",
+        },
+        memo: {
+          type: "string",
+          description:
+            "Destination memo for the crypto address. REQUIRED when network is stellar — a Stellar contact cannot receive USDC without it. The user gets the memo from the recipient's deposit details or exchange. Optional/unused for other networks.",
         },
       }),
     },
-    execute: async (input, client) => client.createContact(input),
+    execute: async (input, client) => {
+      // Transform the flat agent input into the nested REST shape POST
+      // /v1/recipients expects. buildCreateContactPayload THROWS on invalid
+      // input (no memo for Stellar, single-name, missing phone, blaze type,
+      // unsupported network) — surface that message to the model so it can ask
+      // the user for what's missing instead of silently creating a malformed
+      // contact.
+      const payload = buildCreateContactPayload(
+        input as unknown as AgentContactInput
+      )
+      return client.createContact(payload)
+    },
   },
   {
     schema: {
       name: "blaze_pay_contact",
       description:
-        "Send a payment to a saved contact. Resolves the first bank account if bank_account_id is not provided.",
+        "Send a payment to a saved contact. Works for both bank contacts (fiat payout) and Stablecoin contacts (USDC sent on-chain to their crypto wallet). For a bank contact, resolves the first bank account if bank_account_id is omitted. For a Stablecoin contact, resolves the first crypto address if crypto_address_id is omitted. IMPORTANT: crypto (Stablecoin) sends are irreversible once submitted on-chain and cannot be cancelled or refunded — always confirm with the user before sending. Sends of $3,000 or more to a crypto wallet require beneficiary details (legal name, address, wallet type) saved on the recipient.",
       input_schema: props(["contact_id", "amount"], {
         contact_id: { type: "string", description: "Contact ID" },
         bank_account_id: {
           type: "string",
           description:
-            "Bank account ID (resolves first bank account if omitted)",
+            "Bank account ID for a bank contact (resolves first bank account if omitted)",
         },
-        amount: { type: "number", description: "Amount to send" },
+        crypto_address_id: {
+          type: "string",
+          description:
+            "Crypto address ID for a Stablecoin contact (resolves first crypto address if omitted)",
+        },
+        amount: {
+          type: "number",
+          description:
+            "Amount to send (USDC for crypto contacts; fiat in the given currency for bank contacts)",
+        },
         currency: {
           type: "string",
-          description: "Currency code (default USD)",
+          description:
+            "Currency code for a bank contact (default USD). Ignored for crypto sends, which are always USDC.",
         },
         note: { type: "string", description: "Payment note" },
       }),
@@ -239,15 +304,112 @@ const toolDefs: ToolDef[] = [
       const i = input as {
         contact_id: string
         bank_account_id?: string
+        crypto_address_id?: string
         amount: number
         currency?: string
         note?: string
       }
 
       try {
+        const contact = await client.getContact(i.contact_id)
+        const contactType = (contact.type || "").toLowerCase()
+        const hasCrypto = (contact.crypto_addresses || []).length > 0
+        const hasBank = (contact.bank_accounts || []).length > 0
+        const isCryptoContact =
+          contactType === "stablecoin" ||
+          contactType === "crypto" ||
+          (hasCrypto && !hasBank)
+
+        // Balance pre-check is shared by both paths.
+        const balance = await client.getBalance()
+        const availableCents =
+          typeof balance.available === "object"
+            ? (balance.available as { amount: number }).amount
+            : (balance.available as number)
+
+        if (isCryptoContact) {
+          // ---- Crypto (Stablecoin) send: irreversible USDC payout ----
+          const CRYPTO_MINIMUM_CENTS = 100
+          const TRAVEL_RULE_THRESHOLD_CENTS = 300_000
+
+          let cryptoAddressId = i.crypto_address_id
+          let cryptoAddress = (contact.crypto_addresses || []).find(
+            ca => ca.id === cryptoAddressId
+          )
+          if (!cryptoAddressId) {
+            if (!contact.crypto_addresses?.length) {
+              return {
+                success: false,
+                error: "Contact has no crypto addresses on file.",
+              }
+            }
+            cryptoAddress = contact.crypto_addresses[0]
+            cryptoAddressId = cryptoAddress.id
+          } else if (!cryptoAddress) {
+            return {
+              success: false,
+              error: `Crypto address ID "${cryptoAddressId}" not found on this contact.`,
+            }
+          }
+
+          const usdcAmountInCents = Math.round(i.amount * 100)
+
+          if (usdcAmountInCents < CRYPTO_MINIMUM_CENTS) {
+            return {
+              success: false,
+              error: `Minimum crypto send is $${(CRYPTO_MINIMUM_CENTS / 100).toFixed(2)} USDC. You requested $${i.amount.toFixed(2)} USDC — amounts below the minimum are lost on-chain.`,
+            }
+          }
+
+          if (usdcAmountInCents >= TRAVEL_RULE_THRESHOLD_CENTS) {
+            const hasBeneficiaryData = Boolean(
+              cryptoAddress?.wallet_type &&
+              cryptoAddress?.beneficiary_street_line1 &&
+              cryptoAddress?.beneficiary_city &&
+              cryptoAddress?.beneficiary_postal_code &&
+              cryptoAddress?.beneficiary_country_code
+            )
+            if (!hasBeneficiaryData) {
+              return {
+                success: false,
+                error:
+                  "This recipient needs beneficiary details to send $3,000 or more: add legal name, address, and wallet type to the crypto address.",
+              }
+            }
+          }
+
+          if (availableCents < usdcAmountInCents) {
+            return {
+              success: false,
+              error: `Insufficient balance. You have $${(availableCents / 100).toFixed(2)} available but this requires $${(usdcAmountInCents / 100).toFixed(2)}.`,
+            }
+          }
+
+          const result = await client.payContactCrypto(
+            i.contact_id,
+            cryptoAddressId,
+            {
+              usdcAmountInCents,
+              amount: i.amount,
+              note: i.note,
+            }
+          )
+          return {
+            success: true,
+            transferId: result.id,
+            status: result.status,
+            network: cryptoAddress?.network,
+            irreversible: true,
+            // Crypto sends are 1:1 USDC — the recipient receives the sent amount.
+            finalAmount: `$${(usdcAmountInCents / 100).toFixed(2)} USDC`,
+            warning:
+              "Crypto sends are irreversible once submitted on-chain and cannot be cancelled or refunded.",
+          }
+        }
+
+        // ---- Bank contact: fiat payout ----
         let bankAccountId = i.bank_account_id
         if (!bankAccountId) {
-          const contact = await client.getContact(i.contact_id)
           if (!contact.bank_accounts.length) {
             return {
               success: false,
@@ -275,12 +437,6 @@ const toolDefs: ToolDef[] = [
 
         const usdcAmountInCents = Math.round(i.amount * 100)
 
-        // Balance pre-check
-        const balance = await client.getBalance()
-        const availableCents =
-          typeof balance.available === "object"
-            ? (balance.available as { amount: number }).amount
-            : (balance.available as number)
         if (availableCents < usdcAmountInCents) {
           return {
             success: false,
@@ -458,6 +614,321 @@ const toolDefs: ToolDef[] = [
   },
 
   // -------------------------------------------------------------------------
+  // Consumer — withdraw your own balance to your own connected method
+  // -------------------------------------------------------------------------
+  {
+    schema: {
+      name: "blaze_list_connected_payment_methods",
+      description:
+        "List the user's OWN connected payment methods (banks/debit cards) they can withdraw their balance to. By default returns only withdrawal-eligible methods; pass all:true to include ineligible ones with the reason. Use this to find a destination before blaze_withdraw.",
+      input_schema: props([], {
+        all: {
+          type: "boolean",
+          description:
+            "Include methods the user can't withdraw to (default: only eligible)",
+        },
+      }),
+    },
+    execute: async (input, client) => {
+      const i = input as { all?: boolean }
+      if (client.authContext === "business") {
+        return {
+          success: false,
+          error:
+            "Listing your own connected methods requires a personal session (bearer token), not an API key.",
+        }
+      }
+      const result = await client.listConnectedPaymentMethods()
+      const methods = i.all
+        ? result.methods
+        : result.methods.filter(m => m.canWithdraw)
+      return {
+        methods: methods.map(m => ({
+          id: m.id,
+          label: formatConnectedPaymentMethodLabel(m),
+          type: m.type,
+          isDefault: m.id === result.defaultWithdrawalMethodId,
+          canWithdraw: m.canWithdraw,
+          ...(i.all && m.withdrawIneligibilityReason
+            ? {
+                ineligibleReason: humanizeWithdrawIneligibilityReason(
+                  m.withdrawIneligibilityReason
+                ),
+              }
+            : {}),
+        })),
+        defaultWithdrawalMethodId: result.defaultWithdrawalMethodId,
+      }
+    },
+  },
+  {
+    schema: {
+      name: "blaze_withdraw",
+      description:
+        "Withdraw the user's OWN balance to their OWN connected payment method (bank/debit card). IRREVERSIBLE once submitted — always confirm the amount AND destination with the user before calling. Resolves the destination from their withdrawal-eligible methods (uses the only one if there's exactly one; otherwise requires payment_method_id). For USD the USDC drawn from balance equals the fiat amount; for other currencies it's an FX estimate. Defaults to instant for cards, standard for banks.",
+      input_schema: props(["amount"], {
+        amount: {
+          type: "number",
+          description:
+            "Amount to withdraw (major units, in the given currency)",
+        },
+        payment_method_id: {
+          type: "string",
+          description:
+            "Connected payment method ID to withdraw to (required if the user has more than one eligible method)",
+        },
+        currency: {
+          type: "string",
+          description: "Currency code (default USD)",
+        },
+        instant_transfer: {
+          type: "boolean",
+          description:
+            "Force instant (true) or standard (false). Defaults to instant for cards, standard for banks.",
+        },
+      }),
+    },
+    execute: async (input, client) => {
+      const i = input as {
+        amount: number
+        payment_method_id?: string
+        currency?: string
+        instant_transfer?: boolean
+      }
+
+      try {
+        if (client.authContext === "business") {
+          return {
+            success: false,
+            error:
+              "Withdrawing to your own connected method requires a personal session (bearer token), not an API key.",
+          }
+        }
+
+        const currency = (i.currency ?? "USD").toUpperCase()
+
+        // Amount + currency math via the single source of truth: validates the
+        // currency, rejects zero/negative, caps at the Int max, derives cents.
+        const derived = deriveWithdrawalAmounts({ amount: i.amount, currency })
+        if (!derived.ok) {
+          return { success: false, error: derived.error }
+        }
+        const { fiatAmountInCents, usdcAmountInCents } = derived.amounts
+
+        // Resolve a withdrawal-eligible destination.
+        const { methods, defaultWithdrawalMethodId } =
+          await client.listConnectedPaymentMethods()
+        const eligible = methods.filter(m => m.canWithdraw)
+        if (eligible.length === 0) {
+          return {
+            success: false,
+            error:
+              "You have no connected methods you can withdraw to. Add a bank or debit card in the Blaze app first.",
+          }
+        }
+
+        let method = eligible.find(m => m.id === i.payment_method_id)
+        if (i.payment_method_id && !method) {
+          // Distinguish "exists but ineligible" (explain why) from an unknown id.
+          const knownButIneligible = methods.find(
+            m => m.id === i.payment_method_id
+          )
+          if (knownButIneligible) {
+            return {
+              success: false,
+              error: `That method (${formatConnectedPaymentMethodLabel(knownButIneligible)}) can't be withdrawn to: ${humanizeWithdrawIneligibilityReason(knownButIneligible.withdrawIneligibilityReason)}.`,
+            }
+          }
+          return {
+            success: false,
+            error: `Payment method "${i.payment_method_id}" is not one of your withdrawal-eligible methods.`,
+          }
+        }
+        if (!method) {
+          if (eligible.length > 1) {
+            return {
+              success: false,
+              error: `You have ${eligible.length} withdrawal-eligible methods. Ask the user which one, then pass payment_method_id. Default is ${defaultWithdrawalMethodId ?? "none"}.`,
+              methods: eligible.map(m => ({
+                id: m.id,
+                type: m.type,
+                displayName: m.displayName,
+              })),
+            }
+          }
+          method = eligible[0]
+        }
+
+        // Minimum / limit pre-check via the live `checkLimits` query — the
+        // minimum is server-sourced (never hardcoded). Best-effort: if the
+        // check itself throws, continue (the server enforces on submit).
+        try {
+          const limits = await client.checkWithdrawalLimits({
+            paymentMethodId: method.id,
+            fiatAmountInCents,
+            currencyCode: currency,
+          })
+          if (!limits.meetsMinimum) {
+            return {
+              success: false,
+              error: `Withdrawals must be at least $${(limits.minimumAmountCents / 100).toFixed(2)} USD. You entered ${i.amount} ${currency}.`,
+            }
+          }
+          if (!limits.isUnderLimit) {
+            const rem =
+              limits.remainingUsdCents != null
+                ? `$${(limits.remainingUsdCents / 100).toFixed(2)} USD`
+                : "none"
+            return {
+              success: false,
+              error: `This is over your current withdrawal limit — you have about ${rem} of your limit left right now.`,
+            }
+          }
+        } catch {
+          // Limit check is best-effort; the server enforces minimums/limits on submit.
+        }
+
+        // Balance pre-check (against the USDC amount drawn from balance).
+        const balance = await client.getBalance()
+        const availableCents =
+          typeof balance.available === "object"
+            ? (balance.available as { amount: number }).amount
+            : (balance.available as number)
+        if (availableCents < usdcAmountInCents) {
+          return {
+            success: false,
+            error: `You don't have enough balance for this withdrawal — it needs about $${(usdcAmountInCents / 100).toFixed(2)} but you have $${(availableCents / 100).toFixed(2)} available. Try a smaller amount or add funds first.`,
+          }
+        }
+
+        const instantTransfer =
+          i.instant_transfer !== undefined
+            ? i.instant_transfer
+            : method.type === "Card"
+
+        const result = await client.withdrawToPaymentMethod({
+          paymentMethodId: method.id,
+          usdcAmountInCents,
+          fiatAmountInCents,
+          currencyCode: currency,
+          instantTransfer,
+        })
+        const eta = estimateWithdrawalArrival({ instantTransfer, currency })
+        // Best-effort: fetch the real fee from the submitted transfer. The
+        // withdrawal already succeeded, so a failed fetch must NOT error out.
+        let fee: string | undefined
+        try {
+          if (result.rampTransferId) {
+            const t = await client.getRampTransfer(result.rampTransferId)
+            const fc = totalFeeCents(t.feeCollections)
+            if (fc > 0) fee = `$${(fc / 100).toFixed(2)}`
+          }
+        } catch {
+          /* best-effort */
+        }
+        return {
+          success: true,
+          status: result.status,
+          rampTransferId: result.rampTransferId,
+          fee, // e.g. "$2.00" (undefined if unknown)
+          estimatedArrival: eta,
+          summary: `Your withdrawal of ${i.amount} ${currency} to ${formatConnectedPaymentMethodLabel(method)} is on its way${fee ? ` (fee ${fee})` : ""}. ${eta}`,
+          irreversible: true,
+        }
+      } catch (err: unknown) {
+        const error = err as {
+          message?: string
+          statusCode?: number
+          status?: number
+        }
+        return {
+          success: false,
+          error: error?.message || String(err),
+          code: error?.statusCode || error?.status,
+        }
+      }
+    },
+  },
+  {
+    schema: {
+      name: "blaze_estimate_withdrawal_fee",
+      description:
+        "Preview the EXACT withdrawal fee for one of the user's connected payment methods BEFORE withdrawing (read-only; no money moves). Use this to tell the user the fee and total debited before they confirm an irreversible withdrawal. Uses the same applicableFee calculation the app shows.",
+      input_schema: props(["payment_method_id", "amount"], {
+        payment_method_id: {
+          type: "string",
+          description: "Connected payment method ID to estimate the fee for",
+        },
+        amount: {
+          type: "number",
+          description:
+            "Amount to withdraw (major units, in the given currency)",
+        },
+        currency: {
+          type: "string",
+          description: "Currency code (default USD)",
+        },
+      }),
+    },
+    execute: async (input, client) => {
+      const i = input as {
+        payment_method_id: string
+        amount: number
+        currency?: string
+      }
+      try {
+        const { methods, countryCode } =
+          await client.listConnectedPaymentMethods()
+        const method = methods.find(m => m.id === i.payment_method_id)
+        if (!method || !method.canWithdraw) {
+          return {
+            success: false,
+            error: `Payment method "${i.payment_method_id}" is not one of your withdrawal-eligible methods.`,
+          }
+        }
+
+        const currency = (i.currency ?? "USD").toUpperCase()
+        const derived = deriveWithdrawalAmounts({ amount: i.amount, currency })
+        if (!derived.ok) {
+          return { success: false, error: derived.error }
+        }
+        const { usdcAmountInCents } = derived.amounts
+
+        const pmType = mapToPaymentMethodType(method.type)
+        const feeEst = pmType
+          ? await client.getApplicableWithdrawalFee({
+              paymentMethodType: pmType,
+              providerId: method.provider?.id,
+              countryCode,
+              amountCents: usdcAmountInCents,
+            })
+          : null
+        const feeCents = feeEst?.totalFeeCents ?? null
+
+        return {
+          success: true,
+          feeCents,
+          feeUsd: feeCents != null ? `$${(feeCents / 100).toFixed(2)}` : null,
+          displayName: feeEst?.displayName ?? null,
+          totalDebitedUsdc: `$${((usdcAmountInCents + (feeCents ?? 0)) / 100).toFixed(2)}`,
+          note: "Estimate; the exact fee is confirmed at withdrawal.",
+        }
+      } catch (err: unknown) {
+        const error = err as {
+          message?: string
+          statusCode?: number
+          status?: number
+        }
+        return {
+          success: false,
+          error: error?.message || String(err),
+          code: error?.statusCode || error?.status,
+        }
+      }
+    },
+  },
+
+  // -------------------------------------------------------------------------
   // Consumer — transactions
   // -------------------------------------------------------------------------
   {
@@ -551,7 +1022,7 @@ const toolDefs: ToolDef[] = [
     schema: {
       name: "blaze_get_spending_summary",
       description:
-        "Read a summary of the business's bank spending (by category, top merchants) over an optional date range. Read-only insight; amounts are in integer cents.",
+        "Read a summary of the business's bank spending (by category, top merchants) over an optional date range. Read-only insight; amounts are provided both as integer cents (`*_cents`/`totalCents`) and as pre-formatted USD strings (`total_spending`, per-entry `total`) — report the formatted dollar values; do not recompute totals.",
       input_schema: props([], {
         start_date: {
           type: "string",
@@ -565,10 +1036,11 @@ const toolDefs: ToolDef[] = [
     },
     execute: async (input, client) => {
       const i = input as { start_date?: string; end_date?: string }
-      return client.getInsightsSummary({
+      const res = await client.getInsightsSummary({
         start_date: i.start_date,
         end_date: i.end_date,
       })
+      return annotateSpendingSummary(res)
     },
   },
   {
@@ -1157,13 +1629,134 @@ const toolDefs: ToolDef[] = [
   },
 
   // -------------------------------------------------------------------------
-  // Accounting (QuickBooks / Xero integration)
+  // Accounting (QuickBooks / Xero / Puzzle integration)
   // -------------------------------------------------------------------------
   {
     schema: {
       name: "blaze_get_profit_and_loss",
       description:
-        "Get a Profit & Loss (income statement) report from the connected accounting system (QuickBooks or Xero). Shows revenue, expenses, and net income for a date range.",
+        "Get a Profit & Loss (income statement) report from the connected accounting system (QuickBooks, Xero, or Puzzle). Shows revenue, expenses, and net income for a date range.",
+      input_schema: props(["start_date", "end_date"], {
+        start_date: {
+          type: "string",
+          description: "Start date (ISO 8601, e.g. 2026-01-01)",
+        },
+        end_date: {
+          type: "string",
+          description: "End date (ISO 8601, e.g. 2026-06-30)",
+        },
+        basis: {
+          type: "string",
+          enum: ["cash", "accrual"],
+          description: "Accounting basis (default: accrual).",
+        },
+        provider: {
+          type: "string",
+          description:
+            "Provider (quickbooks, xero, or puzzle). Omit if only one is connected.",
+        },
+      }),
+    },
+    execute: async (input, client) => {
+      const i = input as {
+        start_date: string
+        end_date: string
+        basis?: "cash" | "accrual"
+        provider?: string
+      }
+      return client.getProfitAndLoss(i)
+    },
+  },
+  {
+    schema: {
+      name: "blaze_get_balance_sheet",
+      description:
+        "Get a Balance Sheet report showing assets, liabilities, and equity as of a specific date from the connected accounting system (QuickBooks, Xero, or Puzzle).",
+      input_schema: props([], {
+        as_of: {
+          type: "string",
+          description: "Report date (ISO 8601). Defaults to today.",
+        },
+        basis: {
+          type: "string",
+          enum: ["cash", "accrual"],
+          description: "Accounting basis (default: accrual).",
+        },
+        provider: {
+          type: "string",
+          description:
+            "Provider (quickbooks, xero, or puzzle). Omit if only one is connected.",
+        },
+      }),
+    },
+    execute: async (input, client) => {
+      const i = input as {
+        as_of?: string
+        basis?: "cash" | "accrual"
+        provider?: string
+      }
+      return client.getBalanceSheet(i)
+    },
+  },
+  {
+    schema: {
+      name: "blaze_get_chart_of_accounts",
+      description:
+        "List all accounts from the connected accounting system (QuickBooks, Xero, or Puzzle) — revenue, expense, asset, liability, equity accounts. Useful for finding account IDs before creating journal entries.",
+      input_schema: props([], {
+        provider: {
+          type: "string",
+          description:
+            "Provider (quickbooks, xero, or puzzle). Omit if only one is connected.",
+        },
+      }),
+    },
+    execute: async (input, client) => {
+      const i = input as { provider?: string }
+      return client.getChartOfAccounts(i)
+    },
+  },
+  {
+    schema: {
+      name: "blaze_get_trial_balance",
+      description:
+        "Get a Trial Balance report from the connected accounting system (QuickBooks, Xero, or Puzzle). Shows debit and credit totals per account for a date range and whether the books balance.",
+      input_schema: props(["start_date", "end_date"], {
+        start_date: {
+          type: "string",
+          description: "Start date (ISO 8601, e.g. 2026-01-01)",
+        },
+        end_date: {
+          type: "string",
+          description: "End date (ISO 8601, e.g. 2026-06-30)",
+        },
+        basis: {
+          type: "string",
+          enum: ["cash", "accrual"],
+          description: "Accounting basis (default: accrual).",
+        },
+        provider: {
+          type: "string",
+          description:
+            "Provider (quickbooks, xero, or puzzle). Omit if only one is connected.",
+        },
+      }),
+    },
+    execute: async (input, client) => {
+      const i = input as {
+        start_date: string
+        end_date: string
+        basis?: "cash" | "accrual"
+        provider?: string
+      }
+      return client.getTrialBalance(i)
+    },
+  },
+  {
+    schema: {
+      name: "blaze_get_cash_activity",
+      description:
+        "Get a Cash Activity Statement from the connected accounting system (QuickBooks, Xero, or Puzzle). Shows cash inflows and outflows for a date range.",
       input_schema: props(["start_date", "end_date"], {
         start_date: {
           type: "string",
@@ -1176,7 +1769,7 @@ const toolDefs: ToolDef[] = [
         provider: {
           type: "string",
           description:
-            "Provider (quickbooks or xero). Omit if only one is connected.",
+            "Provider (quickbooks, xero, or puzzle). Omit if only one is connected.",
         },
       }),
     },
@@ -1186,54 +1779,367 @@ const toolDefs: ToolDef[] = [
         end_date: string
         provider?: string
       }
-      return client.getProfitAndLoss(i)
+      return client.getCashActivity(i)
     },
   },
   {
     schema: {
-      name: "blaze_get_balance_sheet",
+      name: "blaze_get_vendor_spending",
       description:
-        "Get a Balance Sheet report showing assets, liabilities, and equity as of a specific date.",
-      input_schema: props([], {
-        as_of: {
+        "Get a Vendor Spending report from the connected accounting system (QuickBooks, Xero, or Puzzle). Shows spending grouped by vendor for a date range.",
+      input_schema: props(["start_date", "end_date"], {
+        start_date: {
           type: "string",
-          description: "Report date (ISO 8601). Defaults to today.",
+          description: "Start date (ISO 8601, e.g. 2026-01-01)",
+        },
+        end_date: {
+          type: "string",
+          description: "End date (ISO 8601, e.g. 2026-06-30)",
         },
         provider: {
           type: "string",
           description:
-            "Provider (quickbooks or xero). Omit if only one is connected.",
+            "Provider (quickbooks, xero, or puzzle). Omit if only one is connected.",
         },
       }),
     },
     execute: async (input, client) => {
-      const i = input as { as_of?: string; provider?: string }
-      return client.getBalanceSheet(i)
+      const i = input as {
+        start_date: string
+        end_date: string
+        provider?: string
+      }
+      return client.getVendorSpending(i)
     },
   },
   {
     schema: {
-      name: "blaze_get_chart_of_accounts",
+      name: "blaze_list_accounting_transactions",
       description:
-        "List all accounts from the connected accounting system (revenue, expense, asset, liability, equity accounts). Useful for finding account IDs before creating journal entries.",
+        "List transaction history from the connected accounting system (QuickBooks, Xero, or Puzzle). Read-only; supports date range and pagination.",
+      input_schema: props([], {
+        start_date: {
+          type: "string",
+          description: "Start date (ISO 8601, e.g. 2026-01-01)",
+        },
+        end_date: {
+          type: "string",
+          description: "End date (ISO 8601, e.g. 2026-06-30)",
+        },
+        limit: { type: "number", description: "Maximum number of results" },
+        offset: { type: "number", description: "Pagination offset" },
+        provider: {
+          type: "string",
+          description:
+            "Provider (quickbooks, xero, or puzzle). Omit if only one is connected.",
+        },
+      }),
+    },
+    execute: async (input, client) => {
+      const i = input as {
+        start_date?: string
+        end_date?: string
+        limit?: number
+        offset?: number
+        provider?: string
+      }
+      return client.getAccountingTransactions(i)
+    },
+  },
+  {
+    schema: {
+      name: "blaze_list_accounting_bills",
+      description:
+        "List bill (accounts payable) history from the connected accounting system (QuickBooks, Xero, or Puzzle). Read-only; supports status filter, date range, and pagination.",
+      input_schema: props([], {
+        status: {
+          type: "string",
+          description: "Filter by bill status",
+        },
+        start_date: {
+          type: "string",
+          description: "Start date (ISO 8601, e.g. 2026-01-01)",
+        },
+        end_date: {
+          type: "string",
+          description: "End date (ISO 8601, e.g. 2026-06-30)",
+        },
+        limit: { type: "number", description: "Maximum number of results" },
+        offset: { type: "number", description: "Pagination offset" },
+        provider: {
+          type: "string",
+          description:
+            "Provider (quickbooks, xero, or puzzle). Omit if only one is connected.",
+        },
+      }),
+    },
+    execute: async (input, client) => {
+      const i = input as {
+        status?: string
+        start_date?: string
+        end_date?: string
+        limit?: number
+        offset?: number
+        provider?: string
+      }
+      return client.getAccountingBills(i)
+    },
+  },
+  {
+    schema: {
+      name: "blaze_list_accounting_invoices",
+      description:
+        "List invoice (accounts receivable) history from the connected accounting system (QuickBooks, Xero, or Puzzle). Read-only; supports status filter, date range, and pagination.",
+      input_schema: props([], {
+        status: {
+          type: "string",
+          description: "Filter by invoice status",
+        },
+        start_date: {
+          type: "string",
+          description: "Start date (ISO 8601, e.g. 2026-01-01)",
+        },
+        end_date: {
+          type: "string",
+          description: "End date (ISO 8601, e.g. 2026-06-30)",
+        },
+        limit: { type: "number", description: "Maximum number of results" },
+        offset: { type: "number", description: "Pagination offset" },
+        provider: {
+          type: "string",
+          description:
+            "Provider (quickbooks, xero, or puzzle). Omit if only one is connected.",
+        },
+      }),
+    },
+    execute: async (input, client) => {
+      const i = input as {
+        status?: string
+        start_date?: string
+        end_date?: string
+        limit?: number
+        offset?: number
+        provider?: string
+      }
+      return client.getAccountingInvoices(i)
+    },
+  },
+  {
+    schema: {
+      name: "blaze_sync_bills_from_accounting",
+      description:
+        "Pull bills (accounts payable) from the connected accounting system (QuickBooks, Xero, or Puzzle) into Blaze's bills module. This syncs data with the connected accounting provider. Idempotent — already-pulled bills are skipped. Returns a { processed, created, skipped } summary.",
       input_schema: props([], {
         provider: {
           type: "string",
           description:
-            "Provider (quickbooks or xero). Omit if only one is connected.",
+            "Provider (quickbooks, xero, or puzzle). Omit if only one is connected.",
         },
       }),
     },
     execute: async (input, client) => {
       const i = input as { provider?: string }
-      return client.getChartOfAccounts(i)
+      return client.syncBillsFromAccounting({ provider: i.provider })
+    },
+  },
+  {
+    schema: {
+      name: "blaze_sync_invoices_from_accounting",
+      description:
+        "Pull invoices (accounts receivable) from the connected accounting system (QuickBooks, Xero, or Puzzle) into Blaze. This syncs data with the connected accounting provider. Idempotent — already-pulled invoices are skipped. Returns a { processed, created, skipped } summary.",
+      input_schema: props([], {
+        provider: {
+          type: "string",
+          description:
+            "Provider (quickbooks, xero, or puzzle). Omit if only one is connected.",
+        },
+      }),
+    },
+    execute: async (input, client) => {
+      const i = input as { provider?: string }
+      return client.syncInvoicesFromAccounting({ provider: i.provider })
+    },
+  },
+  {
+    schema: {
+      name: "blaze_sync_vendors",
+      description:
+        "Reconcile vendor master data with the connected accounting system (QuickBooks, Xero, or Puzzle). This syncs data with the connected accounting provider, creating any missing vendors. Idempotent — existing vendors are skipped. Returns a { processed, created, skipped } summary.",
+      input_schema: props([], {
+        provider: {
+          type: "string",
+          description:
+            "Provider (quickbooks, xero, or puzzle). Omit if only one is connected.",
+        },
+      }),
+    },
+    execute: async (input, client) => {
+      const i = input as { provider?: string }
+      return client.syncVendors({ provider: i.provider })
+    },
+  },
+  {
+    schema: {
+      name: "blaze_sync_customers",
+      description:
+        "Reconcile customer master data with the connected accounting system (QuickBooks, Xero, or Puzzle). This syncs data with the connected accounting provider, creating any missing customers. Idempotent — existing customers are skipped. Returns a { processed, created, skipped } summary.",
+      input_schema: props([], {
+        provider: {
+          type: "string",
+          description:
+            "Provider (quickbooks, xero, or puzzle). Omit if only one is connected.",
+        },
+      }),
+    },
+    execute: async (input, client) => {
+      const i = input as { provider?: string }
+      return client.syncCustomers({ provider: i.provider })
+    },
+  },
+  {
+    schema: {
+      name: "blaze_reconcile_accounts",
+      description:
+        'Reconcile the connected accounting provider\'s books (QuickBooks, Xero, or Puzzle) against Blaze\'s internal ledger for a period. Returns matched pairs, unmatched Blaze/provider records, amount discrepancies, and the reconciliation rate. READ-ONLY. Only Puzzle is supported today — QuickBooks/Xero return a not-supported error. Use to answer "do my books match Blaze?", "reconcile Puzzle against Blaze", or "what is missing from the books?".',
+      input_schema: props(["period_start", "period_end"], {
+        period_start: {
+          type: "string",
+          description:
+            "Start of the reconciliation period (ISO 8601, e.g. 2026-01-01)",
+        },
+        period_end: {
+          type: "string",
+          description:
+            "End of the reconciliation period (ISO 8601, e.g. 2026-01-31)",
+        },
+        provider: {
+          type: "string",
+          description:
+            "Provider (quickbooks, xero, or puzzle). Omit if only one is connected.",
+        },
+      }),
+    },
+    execute: async (input, client) => {
+      const i = input as {
+        period_start: string
+        period_end: string
+        provider?: string
+      }
+      return client.reconcileAccounts({
+        period_start: i.period_start,
+        period_end: i.period_end,
+        provider: i.provider,
+      })
+    },
+  },
+  {
+    schema: {
+      name: "blaze_accounting_close_status",
+      description:
+        'Get the month-end close status for a period from the connected accounting provider (QuickBooks, Xero, or Puzzle). Returns the reconciliation rate, whether the books are reconciled against Blaze, and whether the trial balance balances. READ-ONLY. Only Puzzle is supported today — QuickBooks/Xero return a not-supported error. Use to answer "can I close the books for last month?" or "is the period reconciled?".',
+      input_schema: props(["start", "end"], {
+        start: {
+          type: "string",
+          description: "Start of the close period (ISO 8601, e.g. 2026-01-01)",
+        },
+        end: {
+          type: "string",
+          description: "End of the close period (ISO 8601, e.g. 2026-01-31)",
+        },
+        provider: {
+          type: "string",
+          description:
+            "Provider (quickbooks, xero, or puzzle). Omit if only one is connected.",
+        },
+      }),
+    },
+    execute: async (input, client) => {
+      const i = input as { start: string; end: string; provider?: string }
+      return client.getCloseStatus({
+        start: i.start,
+        end: i.end,
+        provider: i.provider,
+      })
+    },
+  },
+  {
+    schema: {
+      name: "blaze_push_bill_to_accounting",
+      description:
+        "IRREVOCABLE — Push a Blaze bill to the connected accounting system's books (QuickBooks, Xero, or Puzzle). This creates a real bill entry in the customer's books. ALWAYS show the bill details (vendor, amount, line items) to the user and get explicit confirmation before calling this tool. Only Puzzle is supported today — QuickBooks/Xero return a not-supported error. confirm must be true.",
+      input_schema: props(["bill_id", "confirm"], {
+        bill_id: { type: "string", description: "Blaze bill id to push" },
+        provider: {
+          type: "string",
+          description:
+            "Provider (quickbooks, xero, or puzzle). Omit if only one is connected.",
+        },
+        confirm: {
+          type: "boolean",
+          description:
+            "Must be true. Set only after showing bill details to the user and receiving explicit confirmation.",
+        },
+      }),
+    },
+    execute: async (input, client) => {
+      const i = input as {
+        bill_id: string
+        provider?: string
+        confirm?: boolean
+      }
+      if (!i.confirm) {
+        return {
+          success: false,
+          error:
+            "You must show the bill details to the user and get confirmation before calling this tool. Set confirm=true only after the user confirms.",
+        }
+      }
+      return client.pushBillToAccounting(i.bill_id, i.provider)
+    },
+  },
+  {
+    schema: {
+      name: "blaze_push_invoice_to_accounting",
+      description:
+        "IRREVOCABLE — Push a Blaze invoice to the connected accounting system's books (QuickBooks, Xero, or Puzzle). This creates a real invoice entry in the customer's books. ALWAYS show the invoice details (customer, amount, line items) to the user and get explicit confirmation before calling this tool. Only Puzzle is supported today — QuickBooks/Xero return a not-supported error. confirm must be true.",
+      input_schema: props(["invoice_id", "confirm"], {
+        invoice_id: {
+          type: "string",
+          description: "Blaze invoice id to push",
+        },
+        provider: {
+          type: "string",
+          description:
+            "Provider (quickbooks, xero, or puzzle). Omit if only one is connected.",
+        },
+        confirm: {
+          type: "boolean",
+          description:
+            "Must be true. Set only after showing invoice details to the user and receiving explicit confirmation.",
+        },
+      }),
+    },
+    execute: async (input, client) => {
+      const i = input as {
+        invoice_id: string
+        provider?: string
+        confirm?: boolean
+      }
+      if (!i.confirm) {
+        return {
+          success: false,
+          error:
+            "You must show the invoice details to the user and get confirmation before calling this tool. Set confirm=true only after the user confirms.",
+        }
+      }
+      return client.pushInvoiceToAccounting(i.invoice_id, i.provider)
     },
   },
   {
     schema: {
       name: "blaze_sync_transaction_to_accounting",
       description:
-        "IRREVOCABLE — Push a journal entry to the connected accounting system (QuickBooks/Xero). This creates a real entry in the customer's books. ALWAYS show the full entry details (accounts, amounts, debit/credit) to the user and get explicit confirmation before calling this tool. Requires account IDs from blaze_get_chart_of_accounts.",
+        "IRREVOCABLE — Push a journal entry to the connected accounting system (QuickBooks, Xero, or Puzzle). This creates a real entry in the customer's books. ALWAYS show the full entry details (accounts, amounts, debit/credit) to the user and get explicit confirmation before calling this tool. Requires account IDs from blaze_get_chart_of_accounts. For Puzzle, journal entries are immutable — a correction creates a reversal plus a new entry, never an in-place edit.",
       input_schema: props(["date", "lines", "confirm"], {
         date: { type: "string", description: "Journal entry date (ISO 8601)" },
         memo: { type: "string", description: "Description/memo for the entry" },
@@ -1262,7 +2168,7 @@ const toolDefs: ToolDef[] = [
         },
         provider: {
           type: "string",
-          description: "Provider (quickbooks or xero)",
+          description: "Provider (quickbooks, xero, or puzzle)",
         },
         confirm: {
           type: "boolean",

@@ -1,10 +1,20 @@
 import {
+  BlazeError,
   BlazeAuthenticationError,
   BlazePermissionError,
   BlazeNotFoundError,
   BlazeValidationError,
   BlazeRateLimitError,
+  BlazeServerError,
+  BlazeNetworkError,
 } from "./errors"
+import {
+  MAX_RETRIES,
+  backoff,
+  isNetworkRetryable,
+  isRetryableStatus,
+  sleep,
+} from "./retry"
 import { randomUUID } from "node:crypto"
 import type {
   Balance,
@@ -77,6 +87,8 @@ import type {
   ScenarioResult,
   BankReconciliationParams,
   ReconciliationResult,
+  ReconcileAccountsParams,
+  AccountingReconciliationResult,
   Product,
   CreateProductInput,
   UpdateProductInput,
@@ -87,7 +99,128 @@ import type {
   ListCouponsParams,
   ValidateCouponInput,
   ValidateCouponResult,
+  ConnectedPaymentMethod,
+  ConnectedPaymentMethodsResult,
+  WithdrawToPaymentMethodInput,
+  WithdrawAccountResult,
+  RampTransferStatusResult,
+  WithdrawalLimits,
+  ApplicableFee,
 } from "./types"
+
+// ============================================
+// Consumer withdrawal GraphQL operations (withdraw own balance to own
+// connected payment method). Module-level query strings in
+// SCREAMING_SNAKE_CASE, mirroring the bills command convention.
+// ============================================
+
+// `mode: Withdraw` is an UNQUOTED GraphQL enum literal — a quoted string errors.
+// Every selected field is verified against the live UserPaymentMethod type.
+const CONNECTED_PAYMENT_METHODS_QUERY = `
+  query ConnectedPaymentMethods {
+    me {
+      id
+      paymentMethods {
+        id
+        type
+        displayName
+        nickname
+        maskedAccountNumber
+        canDeposit
+        canWithdraw
+        withdrawIneligibilityReason
+        disbursementEligible
+        isDefault
+        rampVerificationStatus
+        provider { id name }
+        card { id lastFour brand }
+        binData { isPrepaid type }
+      }
+      defaultWithdrawalMethod: defaultPaymentMethod(mode: Withdraw) { id }
+      defaultResidence { country { code } }
+    }
+  }
+`
+
+// The @Public `applicableFee` query — the SAME fee calculation the mobile app's
+// `useFeeDisplay` uses to preview a withdrawal fee BEFORE the irreversible
+// mutation. Read-only; never moves money. `operationType` is the unquoted
+// GraphQL enum the input expects ("Withdrawal").
+const APPLICABLE_FEE_QUERY = `
+  query ApplicableWithdrawalFee($input: ApplicableFeeInput!) {
+    applicableFee(input: $input) {
+      configId
+      displayName
+      flatFeeCents
+      percentageFeeCents
+      percentageRate
+      totalFeeCents
+      minFeeCents
+    }
+  }
+`
+
+// Irreversible money movement — must NEVER be retried (graphqlRequest does not
+// retry). The CLI additionally selects `rampTransferId` (the app omits it) so
+// the status can be polled.
+const WITHDRAW_ACCOUNT_MUTATION = `
+  mutation Withdraw($input: WithdrawInput!) {
+    withdrawAccount(input: $input) {
+      status
+      message
+      jobId
+      rampTransferId
+    }
+  }
+`
+
+// `Amount` exposes `value` (cents) + `currency { code }` — NOT `amount`/
+// `currencyCode`. An invalid field would error the whole query.
+const RAMP_TRANSFER_QUERY = `
+  query RampTransfer($id: ID!) {
+    rampTransfer(id: $id) {
+      id
+      type
+      status
+      isInstant
+      createdAt
+      expectedAt
+      fiatAmount { value currency { code } }
+      usdcAmount { value currency { code } }
+      paymentMethod { id displayName type }
+      feeCollections { amountCents displayName collectionMethod feeType }
+    }
+  }
+`
+
+// Mirrors the mobile app's `checkLimits` query — the authoritative source for
+// the withdrawal minimum and per-user limit. Read-only; never mutates. Used to
+// pre-check BEFORE the irreversible `withdrawAccount` mutation so we never
+// hardcode the minimum client-side.
+const CHECK_LIMITS_QUERY = `
+  query CheckLimits($input: CheckLimitsInput!) {
+    checkLimits(input: $input) {
+      isUnderLimit
+      meetsMinimum
+      minimumAmountCents
+      limit { amount currency { code } }
+      remaining { amount currency { code } }
+    }
+  }
+`
+
+/**
+ * Reads a numeric `Retry-After` header (seconds) from a fetch Response, if
+ * present. Defensive against test mocks that omit a real `headers` object.
+ */
+function parseRetryAfter(res: Response): number | undefined {
+  const headers = (res as { headers?: { get?: (k: string) => string | null } })
+    .headers
+  const raw = headers?.get?.("retry-after")
+  if (!raw) return undefined
+  const seconds = Number(raw)
+  return Number.isFinite(seconds) ? seconds : undefined
+}
 
 export interface BlazeClientOptions {
   apiKey?: string
@@ -109,7 +242,37 @@ export class BlazeClient {
     this.apiKey = opts.apiKey
     this.bearerToken = opts.bearerToken
     this.baseUrl = opts.baseUrl ?? "https://api.blaze.money"
-    this.defaultHeaders = opts.defaultHeaders ?? {}
+    // Copy so we never mutate the caller's object when defaulting headers below.
+    this.defaultHeaders = { ...(opts.defaultHeaders ?? {}) }
+
+    // A bearer token is a personal (consumer) session — see `authContext`. If a
+    // bearer-authed request is sent with NO `x-business-id` header, the server's
+    // TenantContextMiddleware auto-selects the user's first business membership,
+    // classifies the request as "business", and the ConsumerOnlyGuard returns
+    // 403 on every consumer endpoint — locking business owners out of all
+    // personal endpoints. Defaulting to `x-blaze-personal` here keeps the
+    // consumer context unless a business was explicitly selected. We only set it
+    // when neither header was already provided so an explicit business/personal
+    // choice is never clobbered. This applies ONLY to bearer clients; API keys
+    // are business-scoped and the server resolves the business from the key.
+    if (
+      this.bearerToken &&
+      this.defaultHeaders["x-business-id"] === undefined &&
+      this.defaultHeaders["x-blaze-personal"] === undefined
+    ) {
+      this.defaultHeaders["x-blaze-personal"] = "true"
+    }
+  }
+
+  /**
+   * Which account context this client is authenticated as. A bearer token is a
+   * personal (consumer) session; an API key is always business-scoped. The
+   * agent uses this to route to context-appropriate tools (e.g. P2P payments
+   * and contact/user search are consumer-only; customers/bills/transfers are
+   * business-only) instead of calling a tool the server will reject.
+   */
+  get authContext(): "consumer" | "business" {
+    return this.bearerToken ? "consumer" : "business"
   }
 
   private async request<T>(
@@ -128,54 +291,93 @@ export class BlazeClient {
       headers["X-API-Key"] = this.apiKey
     }
 
-    const res = await fetch(url, {
-      method,
-      headers,
-      body: body ? JSON.stringify(body) : undefined,
-    })
+    // Retry is gated on idempotent GETs only. POST/PATCH/PUT/DELETE (transfers,
+    // withdrawals, send-payment, bill-pay, etc.) are NEVER retried so a partial
+    // success can't be silently duplicated.
+    const canRetry = method === "GET"
 
-    if (!res.ok) {
-      const errorBody = (await res.json().catch(() => ({}))) as Record<
-        string,
-        unknown
-      >
-      const rawMsg = errorBody.message
-      const msg =
-        typeof rawMsg === "string"
-          ? rawMsg
-          : rawMsg
-            ? JSON.stringify(rawMsg)
+    // attempt 0 is the first try; up to MAX_RETRIES additional attempts.
+    for (let attempt = 0; ; attempt++) {
+      let res: Response
+      try {
+        res = await fetch(url, {
+          method,
+          headers,
+          body: body ? JSON.stringify(body) : undefined,
+        })
+      } catch (err) {
+        // Network-layer failure (fetch rejected before any response).
+        if (canRetry && attempt < MAX_RETRIES && isNetworkRetryable(err)) {
+          await sleep(backoff(attempt))
+          continue
+        }
+        const code =
+          typeof err === "object" && err !== null
+            ? (err as { code?: string }).code
             : undefined
-      switch (res.status) {
-        case 401:
-          throw new BlazeAuthenticationError(msg ?? "Authentication failed")
-        case 403:
-          throw new BlazePermissionError(msg ?? "Insufficient permissions")
-        case 404:
-          throw new BlazeNotFoundError(msg ?? "Resource not found")
-        case 400:
-          throw new BlazeValidationError(
-            msg ?? "Validation failed",
-            errorBody.errors as Record<string, string[]>
-          )
-        case 429:
-          throw new BlazeRateLimitError(msg ?? "Rate limit exceeded")
-        default:
-          throw new Error(`HTTP ${res.status}: ${msg ?? res.statusText}`)
+        throw new BlazeNetworkError(
+          err instanceof Error ? err.message : "Network error",
+          code
+        )
       }
-    }
 
-    if (res.status === 204 || res.headers?.get("content-length") === "0") {
-      return undefined as T
-    }
+      if (!res.ok) {
+        // Transient HTTP failures (429 / 5xx) are retried on GETs.
+        if (
+          canRetry &&
+          attempt < MAX_RETRIES &&
+          isRetryableStatus(res.status)
+        ) {
+          const retryAfter = parseRetryAfter(res)
+          await sleep(backoff(attempt, retryAfter))
+          continue
+        }
 
-    const json = (await res.json()) as Record<string, unknown>
-    // List responses have { object: "list", data: [...] } at top level — return as-is.
-    // Single-object responses are wrapped in { data: {...} } — unwrap.
-    if (json.object === "list") {
-      return json as T
+        const errorBody = (await res.json().catch(() => ({}))) as Record<
+          string,
+          unknown
+        >
+        const rawMsg = errorBody.message
+        const msg =
+          typeof rawMsg === "string"
+            ? rawMsg
+            : rawMsg
+              ? JSON.stringify(rawMsg)
+              : undefined
+        switch (res.status) {
+          case 401:
+            throw new BlazeAuthenticationError(msg ?? "Authentication failed")
+          case 403:
+            throw new BlazePermissionError(msg ?? "Insufficient permissions")
+          case 404:
+            throw new BlazeNotFoundError(msg ?? "Resource not found")
+          case 400:
+            throw new BlazeValidationError(
+              msg ?? "Validation failed",
+              errorBody.errors as Record<string, string[]>
+            )
+          case 429:
+            throw new BlazeRateLimitError(msg ?? "Rate limit exceeded")
+          default:
+            throw new BlazeServerError(
+              `HTTP ${res.status}: ${msg ?? res.statusText}`,
+              res.status
+            )
+        }
+      }
+
+      if (res.status === 204 || res.headers?.get("content-length") === "0") {
+        return undefined as T
+      }
+
+      const json = (await res.json()) as Record<string, unknown>
+      // List responses have { object: "list", data: [...] } at top level — return as-is.
+      // Single-object responses are wrapped in { data: {...} } — unwrap.
+      if (json.object === "list") {
+        return json as T
+      }
+      return (json.data ?? json) as T
     }
-    return (json.data ?? json) as T
   }
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -379,6 +581,174 @@ export class BlazeClient {
     return data.businessActivityLog
   }
 
+  // ============================================
+  // Consumer withdrawals — withdraw own balance to own connected method.
+  // Mirrors the mobile app's `withdrawAccount` flow. Consumer/bearer context
+  // only (the mutation reads userId from the JWT; an API-key/business context
+  // would be rejected). Distinct from the business `createWithdrawal` above.
+  // ============================================
+
+  /**
+   * Lists the authenticated user's connected payment methods (banks/cards) and
+   * their default withdrawal method id. Does NOT filter — callers filter on
+   * `canWithdraw === true` to find valid withdrawal destinations.
+   */
+  async listConnectedPaymentMethods(): Promise<ConnectedPaymentMethodsResult> {
+    const data = await this.graphqlRequest<{
+      me: {
+        id: string
+        paymentMethods: ConnectedPaymentMethod[]
+        defaultWithdrawalMethod?: { id: string } | null
+        defaultResidence?: { country?: { code?: string | null } | null } | null
+      }
+    }>(CONNECTED_PAYMENT_METHODS_QUERY)
+    return {
+      methods: data.me.paymentMethods,
+      defaultWithdrawalMethodId: data.me.defaultWithdrawalMethod?.id ?? null,
+      countryCode: data.me.defaultResidence?.country?.code ?? null,
+    }
+  }
+
+  /**
+   * Previews the exact withdrawal fee via the @Public `applicableFee` query —
+   * the SAME calculation the mobile app's `useFeeDisplay` shows. Read-only; no
+   * money moves. `amountCents` is the USD/USDC amount (`usdcAmountInCents`).
+   * Returns null when the server returns no fee config for the inputs. Callers
+   * should treat this as best-effort — the exact fee is written to the transfer
+   * at submit time regardless.
+   */
+  async getApplicableWithdrawalFee(input: {
+    paymentMethodType: string
+    providerId?: string | null
+    countryCode?: string | null
+    amountCents: number
+  }): Promise<ApplicableFee | null> {
+    const data = await this.graphqlRequest<{
+      applicableFee: ApplicableFee | null
+    }>(APPLICABLE_FEE_QUERY, {
+      input: {
+        paymentMethodType: input.paymentMethodType,
+        providerId: input.providerId ?? null,
+        countryCode: input.countryCode ?? null,
+        operationType: "Withdrawal",
+        amountCents: input.amountCents,
+      },
+    })
+    return data.applicableFee ?? null
+  }
+
+  /**
+   * Pre-checks a withdrawal against the server's authoritative minimum and
+   * per-user limit via the same `checkLimits` query the mobile app uses. The
+   * minimum is server-sourced (currently $5.00 USD-equivalent) — never
+   * hardcode it. Read-only; safe to call before the irreversible mutation.
+   * The server STILL enforces minimums/limits on submit, so callers should
+   * treat this as best-effort and proceed on a thrown error.
+   */
+  async checkWithdrawalLimits(input: {
+    paymentMethodId: string
+    fiatAmountInCents: number
+    currencyCode: string
+  }): Promise<WithdrawalLimits> {
+    const data = await this.graphqlRequest<{
+      checkLimits: {
+        isUnderLimit: boolean
+        meetsMinimum: boolean
+        minimumAmountCents: number
+        limit?: { amount: number } | null
+        remaining?: { amount: number } | null
+      }
+    }>(CHECK_LIMITS_QUERY, {
+      input: {
+        amountEntered: {
+          amount: input.fiatAmountInCents,
+          scale: 2,
+          currency: {
+            code: input.currencyCode.toUpperCase(),
+            base: 10,
+            exponent: 2,
+          },
+        },
+        type: "Withdrawal",
+        paymentMethodId: input.paymentMethodId,
+      },
+    })
+    const c = data.checkLimits
+    return {
+      meetsMinimum: c.meetsMinimum,
+      minimumAmountCents: c.minimumAmountCents,
+      isUnderLimit: c.isUnderLimit,
+      limitUsdCents: c.limit?.amount ?? null,
+      remainingUsdCents: c.remaining?.amount ?? null,
+    }
+  }
+
+  /**
+   * Withdraws the user's own balance to their own connected payment method.
+   *
+   * IRREVERSIBLE money movement. This is NOT retried (graphqlRequest performs
+   * no retries) so a partial success can never be silently duplicated. Amount
+   * derivation (`usdcAmountInCents`/`fiatAmountInCents`) is the caller's
+   * responsibility — see the withdrawals command. The server enforces
+   * eligibility/limits and returns a human-readable message on rejection;
+   * surface it verbatim.
+   */
+  async withdrawToPaymentMethod(
+    input: WithdrawToPaymentMethodInput
+  ): Promise<WithdrawAccountResult> {
+    const data = await this.graphqlRequest<{
+      withdrawAccount: WithdrawAccountResult
+    }>(WITHDRAW_ACCOUNT_MUTATION, { input })
+    // Null-result guard: a successful HTTP/GraphQL response with no
+    // `withdrawAccount` payload means we can't confirm the withdrawal landed.
+    // It is irreversible and never retried, so surface a clear message telling
+    // the user to check recent activity before trying again.
+    if (!data.withdrawAccount) {
+      throw new BlazeServerError(
+        "Your withdrawal didn't return a result. Check your recent activity before retrying — it may already be processing."
+      )
+    }
+    return data.withdrawAccount
+  }
+
+  /**
+   * Fetches the status of a withdrawal (RampTransfer) by id. Auth-required but
+   * not super-admin — a normal user can poll their own returned transfer id.
+   */
+  async getRampTransfer(id: string): Promise<RampTransferStatusResult> {
+    let data: { rampTransfer: RampTransferStatusResult }
+    try {
+      data = await this.graphqlRequest<{
+        rampTransfer: RampTransferStatusResult
+      }>(RAMP_TRANSFER_QUERY, { id })
+    } catch (err) {
+      // graphqlRequest already throws typed BlazeErrors for network/HTTP/auth
+      // failures — re-throw those unchanged. For a GraphQL-level error on a
+      // valid request, the id not resolving to a RampTransfer surfaces as a
+      // non-null violation OR a masked generic message ("An unexpected error
+      // occurred…"); map those to a clear not-found, but leave unmapped HTTP
+      // errors and genuinely unrelated GraphQL errors alone.
+      if (err instanceof BlazeError) throw err
+      const message = err instanceof Error ? err.message : String(err)
+      if (
+        /cannot return null|non-nullable|unexpected error|not found/i.test(
+          message
+        )
+      ) {
+        throw new BlazeNotFoundError(
+          `No withdrawal found with id ${id}. Double-check the id from your withdrawal confirmation.`
+        )
+      }
+      throw err
+    }
+    if (!data.rampTransfer) {
+      throw new BlazeNotFoundError(
+        `No withdrawal found with id ${id}. Double-check the id from your withdrawal confirmation.`
+      )
+    }
+    return data.rampTransfer
+  }
+
   // Generic GraphQL helper — bills surfaces are GraphQL-only on the
   // server side; this lets the existing apiKey / bearerToken /
   // x-business-id auth flow apply unchanged.
@@ -396,13 +766,44 @@ export class BlazeClient {
     } else if (this.apiKey) {
       headers["X-API-Key"] = this.apiKey
     }
-    const res = await fetch(url, {
-      method: "POST",
-      headers,
-      body: JSON.stringify({ query, variables }),
-    })
+    let res: Response
+    try {
+      res = await fetch(url, {
+        method: "POST",
+        headers,
+        body: JSON.stringify({ query, variables }),
+      })
+    } catch {
+      // Network-layer failure (fetch rejected before any response).
+      throw new BlazeNetworkError(
+        "Couldn't reach Blaze — check your connection and try again."
+      )
+    }
     if (!res.ok) {
-      throw new Error(`GraphQL HTTP ${res.status}: ${res.statusText}`)
+      // Map HTTP status to a typed, user-safe error. GraphQL-level errors
+      // (inside a 200 body) are handled below and surfaced verbatim.
+      switch (res.status) {
+        case 401:
+          throw new BlazeAuthenticationError(
+            "Your session is invalid or expired. Run `blaze auth` to log in again."
+          )
+        case 403:
+          throw new BlazePermissionError(
+            "You don't have permission to do that."
+          )
+        case 429:
+          throw new BlazeRateLimitError(
+            "Too many requests right now — wait a moment and try again."
+          )
+        default:
+          if (res.status >= 500) {
+            throw new BlazeServerError(
+              "Blaze had a temporary problem. Try again shortly.",
+              res.status
+            )
+          }
+          throw new Error(`GraphQL HTTP ${res.status}: ${res.statusText}`)
+      }
     }
     const json = (await res.json()) as {
       data?: T
@@ -876,6 +1277,43 @@ export class BlazeClient {
     )
   }
 
+  /**
+   * Send USDC to a contact's external crypto address (Stellar/EVM/Solana).
+   *
+   * Posts the consumer crypto-transfer body the backend expects:
+   * `type:"CryptoTransfer"`, `cryptoAddressId`, and `usdcAmount` in **cents**
+   * (`currencyId:"USD"`). Crucially it sends NO `bankAccountId`/`fiatAmount` —
+   * a crypto send moves USDC 1:1 with no fiat conversion leg.
+   *
+   * Crypto sends are irreversible once submitted on-chain. Amount validation
+   * (per-chain minimum, >$3k Travel Rule beneficiary data) is the caller's
+   * responsibility — the backend will reject sub-minimum/dust sends and >$3k
+   * sends lacking beneficiary data, but callers should pre-validate for a
+   * better UX.
+   */
+  async payContactCrypto(
+    recipientId: string,
+    cryptoAddressId: string,
+    opts: {
+      usdcAmountInCents: number
+      amount?: number
+      note?: string
+    }
+  ): Promise<TransferResponse> {
+    const idempotencyKey = randomUUID()
+
+    return this.request<TransferResponse>(
+      "POST",
+      `/v1/recipients/${recipientId}/transfers`,
+      {
+        type: "CryptoTransfer",
+        cryptoAddressId,
+        usdcAmount: { value: opts.usdcAmountInCents, currencyId: "USD" },
+        idempotencyKey,
+      }
+    )
+  }
+
   // User Search (P2P network)
   async searchUsers(
     query: string,
@@ -980,14 +1418,21 @@ export class BlazeClient {
   async connectAccounting(
     provider: string
   ): Promise<{ session_id: string; auth_url: string }> {
+    const providerMap: Record<string, string> = {
+      QUICKBOOKS: "QUICKBOOKS_ONLINE",
+      QUICKBOOKS_ONLINE: "QUICKBOOKS_ONLINE",
+      XERO: "XERO",
+      PUZZLE: "PUZZLE",
+    }
+    const normalizedProvider = providerMap[provider.toUpperCase()]
+    if (!normalizedProvider) {
+      throw new Error(`Unsupported accounting provider: ${provider}`)
+    }
     return this.request<{ session_id: string; auth_url: string }>(
       "POST",
       "/v1/accounting/connect",
       {
-        provider:
-          provider.toUpperCase() === "QUICKBOOKS"
-            ? "QUICKBOOKS_ONLINE"
-            : "XERO",
+        provider: normalizedProvider,
       }
     )
   }
@@ -1012,6 +1457,7 @@ export class BlazeClient {
   async getProfitAndLoss(params: {
     start_date: string
     end_date: string
+    basis?: "cash" | "accrual"
     provider?: string
   }): Promise<any> {
     return this.request(
@@ -1022,6 +1468,7 @@ export class BlazeClient {
 
   async getBalanceSheet(params: {
     as_of?: string
+    basis?: "cash" | "accrual"
     provider?: string
   }): Promise<any> {
     return this.request(
@@ -1034,6 +1481,81 @@ export class BlazeClient {
     return this.request(
       "GET",
       `/v1/accounting/chart-of-accounts${this.buildQuery(params ?? {})}`
+    )
+  }
+
+  async getTrialBalance(params: {
+    start_date: string
+    end_date: string
+    basis?: "cash" | "accrual"
+    provider?: string
+  }): Promise<any> {
+    return this.request(
+      "GET",
+      `/v1/accounting/trial-balance${this.buildQuery(params)}`
+    )
+  }
+
+  async getCashActivity(params: {
+    start_date: string
+    end_date: string
+    provider?: string
+  }): Promise<any> {
+    return this.request(
+      "GET",
+      `/v1/accounting/cash-activity-statement${this.buildQuery(params)}`
+    )
+  }
+
+  async getVendorSpending(params: {
+    start_date: string
+    end_date: string
+    provider?: string
+  }): Promise<any> {
+    return this.request(
+      "GET",
+      `/v1/accounting/vendor-spending${this.buildQuery(params)}`
+    )
+  }
+
+  async getAccountingTransactions(params?: {
+    start_date?: string
+    end_date?: string
+    limit?: number
+    offset?: number
+    provider?: string
+  }): Promise<any> {
+    return this.request(
+      "GET",
+      `/v1/accounting/transactions${this.buildQuery(params ?? {})}`
+    )
+  }
+
+  async getAccountingBills(params?: {
+    status?: string
+    start_date?: string
+    end_date?: string
+    limit?: number
+    offset?: number
+    provider?: string
+  }): Promise<any> {
+    return this.request(
+      "GET",
+      `/v1/accounting/bills${this.buildQuery(params ?? {})}`
+    )
+  }
+
+  async getAccountingInvoices(params?: {
+    status?: string
+    start_date?: string
+    end_date?: string
+    limit?: number
+    offset?: number
+    provider?: string
+  }): Promise<any> {
+    return this.request(
+      "GET",
+      `/v1/accounting/invoices${this.buildQuery(params ?? {})}`
     )
   }
 
@@ -1062,6 +1584,104 @@ export class BlazeClient {
           description: l.description,
         })),
       }
+    )
+  }
+
+  // Accounting sync triggers (pull/reconcile data with the connected provider).
+  // Each returns a { processed, created, skipped } summary. `provider` is
+  // optional — the single connected integration is resolved when omitted.
+  async syncBillsFromAccounting(params?: {
+    provider?: string
+  }): Promise<{ processed: number; created: number; skipped: number }> {
+    return this.request("POST", "/v1/accounting/sync/bills", params ?? {})
+  }
+
+  async syncInvoicesFromAccounting(params?: {
+    provider?: string
+  }): Promise<{ processed: number; created: number; skipped: number }> {
+    return this.request("POST", "/v1/accounting/sync/invoices", params ?? {})
+  }
+
+  async syncVendors(params?: {
+    provider?: string
+  }): Promise<{ processed: number; created: number; skipped: number }> {
+    return this.request("POST", "/v1/accounting/sync/vendors", params ?? {})
+  }
+
+  async syncCustomers(params?: {
+    provider?: string
+  }): Promise<{ processed: number; created: number; skipped: number }> {
+    return this.request("POST", "/v1/accounting/sync/customers", params ?? {})
+  }
+
+  /**
+   * Reconcile the connected accounting provider's books against Blaze's
+   * internal ledger for a period. Read-only. Only Puzzle is supported today —
+   * QuickBooks/Xero return a not-supported error. `provider` is optional and
+   * resolves to the single connected integration when omitted.
+   */
+  async reconcileAccounts(
+    params: ReconcileAccountsParams
+  ): Promise<AccountingReconciliationResult> {
+    return this.request<AccountingReconciliationResult>(
+      "POST",
+      "/v1/accounting/reconcile",
+      {
+        period_start: params.period_start,
+        period_end: params.period_end,
+        ...(params.provider ? { provider: params.provider } : {}),
+      }
+    )
+  }
+
+  /**
+   * Push a Blaze bill to the connected accounting provider's books (Blaze →
+   * Puzzle). WRITE. Only Puzzle is supported today — QuickBooks/Xero return a
+   * not-supported error. `provider` is optional and resolves to the single
+   * connected integration when omitted.
+   */
+  async pushBillToAccounting(
+    billId: string,
+    provider?: string
+  ): Promise<{ externalId: string; pending: boolean }> {
+    return this.request("POST", "/v1/accounting/bills", {
+      bill_id: billId,
+      ...(provider ? { provider } : {}),
+    })
+  }
+
+  /**
+   * Push a Blaze invoice to the connected accounting provider's books (Blaze →
+   * Puzzle). WRITE. Mirrors pushBillToAccounting.
+   */
+  async pushInvoiceToAccounting(
+    invoiceId: string,
+    provider?: string
+  ): Promise<{ externalId: string; pending: boolean }> {
+    return this.request("POST", "/v1/accounting/invoices", {
+      invoice_id: invoiceId,
+      ...(provider ? { provider } : {}),
+    })
+  }
+
+  /**
+   * Read the computed month-end close status for a period — reconciliation rate
+   * / reconciled flag and whether the trial balance balances. Read-only;
+   * data-only (no UI). Only Puzzle is supported today — QuickBooks/Xero return a
+   * not-supported error. `provider` is optional.
+   */
+  async getCloseStatus(params: {
+    start: string
+    end: string
+    provider?: string
+  }): Promise<{
+    period: { start: string; end: string }
+    reconciliation: { rate: number; reconciled: boolean }
+    trialBalanceBalances: boolean
+  }> {
+    return this.request(
+      "GET",
+      `/v1/accounting/close-status${this.buildQuery(params)}`
     )
   }
 

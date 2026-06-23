@@ -2,11 +2,58 @@ import { Command } from "commander"
 import { confirm, select } from "@inquirer/prompts"
 import { getClient, getGlobalOpts, handleError, withSpinner } from "../utils"
 import { formatOutput } from "../output"
-import type { Contact, ContactBankAccount } from "../../sdk/types"
+import { NETWORK_MAP, SUPPORTED_NETWORKS } from "../../sdk/contact-payload"
+import type {
+  Contact,
+  ContactBankAccount,
+  ContactCryptoAddress,
+  ContactWalletType,
+  CreateContactCryptoAddressData,
+} from "../../sdk/types"
 import { estimateUsdAmount } from "../../constants/fx-rates"
+
+// Wallet custody types accepted on the `--wallet-type` flag (Travel Rule).
+const WALLET_TYPE_MAP: Record<string, ContactWalletType> = {
+  "self-custodied": "SelfCustodied",
+  selfcustodied: "SelfCustodied",
+  hosted: "Hosted",
+  external: "External",
+}
+
+// Travel Rule threshold: sends of $3,000 or more (300,000 cents) require
+// beneficiary data on the crypto address (legal name + address + wallet type).
+const TRAVEL_RULE_THRESHOLD_CENTS = 300_000
+
+// Per-chain USDC minimum. $1 = 100 cents on every chain today (Bridge Route
+// Explorer). Dust below the minimum is neither credited nor returned.
+const CRYPTO_MINIMUM_CENTS = 100
 
 function truncate(str: string, max: number): string {
   return str.length > max ? str.slice(0, max - 1) + "…" : str
+}
+
+// Shortens a wallet address to `0x1234…5678` form for compact display.
+function shortenAddress(address: string): string {
+  if (address.length <= 12) return address
+  return `${address.slice(0, 6)}…${address.slice(-4)}`
+}
+
+// Formats a contact's crypto addresses as `Ethereum (0x1234…5678)` for the
+// account column in `contacts list`.
+function formatCryptoAddresses(addresses: ContactCryptoAddress[]): string {
+  return addresses
+    .map(ca => `${ca.network} (${shortenAddress(ca.address)})`)
+    .join(", ")
+}
+
+// A Stablecoin/crypto contact is one whose type is Stablecoin, or which has
+// crypto addresses and no usable bank account to fall back on.
+function isCryptoContact(contact: Contact): boolean {
+  const type = (contact.type || "").toLowerCase()
+  if (type === "stablecoin" || type === "crypto") return true
+  const hasCrypto = (contact.crypto_addresses || []).length > 0
+  const hasBank = (contact.bank_accounts || []).length > 0
+  return hasCrypto && !hasBank
 }
 
 function formatDate(iso: string | undefined): string {
@@ -44,6 +91,71 @@ async function resolveBankAccount(
   return resolved
 }
 
+async function resolveCryptoAddress(
+  contact: Contact
+): Promise<ContactCryptoAddress> {
+  const addresses = contact.crypto_addresses || []
+  if (addresses.length === 0) {
+    throw new Error(
+      `Contact "${contact.first_name || contact.business_name}" has no crypto addresses.`
+    )
+  }
+  if (addresses.length === 1) return addresses[0]
+
+  const choice = await select({
+    message: `${contact.first_name || contact.business_name} has ${addresses.length} crypto addresses:`,
+    choices: addresses.map(ca => ({
+      name: `${ca.network} — ${shortenAddress(ca.address)}`,
+      value: ca.id,
+    })),
+  })
+  const resolved = addresses.find(ca => ca.id === choice)
+  if (!resolved) {
+    throw new Error("Selected crypto address not found.")
+  }
+  return resolved
+}
+
+// Checks whether a crypto address carries the beneficiary data the Travel Rule
+// requires for sends over $3,000. The legal name is resolved separately from
+// the contact's name; this validates the address-side fields.
+//
+// Hosted/custodial wallets additionally require a wallet-ownership attestation
+// timestamp — Bridge rejects hosted beneficiaries without it. SelfCustodied and
+// External (self-hosted) wallets do NOT require the attestation.
+function hasTravelRuleBeneficiaryData(address: ContactCryptoAddress): boolean {
+  const hasBaseBeneficiaryData = Boolean(
+    address.wallet_type &&
+    address.beneficiary_street_line1 &&
+    address.beneficiary_city &&
+    address.beneficiary_postal_code &&
+    address.beneficiary_country_code
+  )
+  if (!hasBaseBeneficiaryData) return false
+
+  if (address.wallet_type === "Hosted") {
+    return Boolean(address.wallet_ownership_attested_at)
+  }
+
+  return true
+}
+
+// True when a crypto address is missing only the hosted-wallet attestation
+// timestamp (it otherwise has complete base beneficiary data). Used to give a
+// hosted recipient a precise, actionable error instead of the generic one.
+function isMissingHostedAttestation(address: ContactCryptoAddress): boolean {
+  return (
+    address.wallet_type === "Hosted" &&
+    Boolean(
+      address.beneficiary_street_line1 &&
+      address.beneficiary_city &&
+      address.beneficiary_postal_code &&
+      address.beneficiary_country_code
+    ) &&
+    !address.wallet_ownership_attested_at
+  )
+}
+
 export function registerContactsCommands(program: Command): void {
   const contacts = program
     .command("contacts")
@@ -67,17 +179,20 @@ export function registerContactsCommands(program: Command): void {
             c.business_name ||
             [c.first_name, c.last_name].filter(Boolean).join(" ") ||
             "–"
+          const bankAccount = c.bank_accounts
+            ?.map(ba => {
+              const bank = truncate(ba.bank_name || "Bank", 12)
+              const last4 = (ba.account_number || "").slice(-4)
+              return last4 ? `${bank} (****${last4})` : bank
+            })
+            .join(", ")
+          const cryptoAccount = c.crypto_addresses?.length
+            ? formatCryptoAddresses(c.crypto_addresses)
+            : ""
           return {
             name: truncate(name, 24),
             type: c.type,
-            account:
-              c.bank_accounts
-                ?.map(ba => {
-                  const bank = truncate(ba.bank_name || "Bank", 12)
-                  const last4 = (ba.account_number || "").slice(-4)
-                  return last4 ? `${bank} (****${last4})` : bank
-                })
-                .join(", ") || "–",
+            account: bankAccount || cryptoAccount || "–",
             email: truncate(c.email || "–", 22),
             favorite: c.is_favorite ? "★" : "",
             added: formatDate(c.created_at),
@@ -102,7 +217,35 @@ export function registerContactsCommands(program: Command): void {
     .option("--account-number <n>", "US account number")
     .option("--clabe <n>", "CLABE (Mexico)")
     .option("--wallet-address <address>", "Crypto wallet address")
-    .option("--network <network>", "Blockchain network: stellar, ethereum")
+    .option(
+      "--network <network>",
+      `Blockchain network: ${SUPPORTED_NETWORKS.join(", ")}`
+    )
+    .option(
+      "--memo <memo>",
+      "Destination memo (provided by the recipient/exchange). Required for Stellar recipients to receive USDC."
+    )
+    .option(
+      "--wallet-type <type>",
+      "Wallet custody (Travel Rule, >$3k sends): self-custodied, hosted, external"
+    )
+    .option(
+      "--attest-ownership",
+      "Record that you attest the recipient owns this hosted/custodial wallet (sets the attestation timestamp to now). Required for hosted wallets on $3,000+ sends."
+    )
+    .option(
+      "--wallet-attested-at <iso>",
+      "Explicit wallet-ownership attestation timestamp (ISO-8601). Overrides --attest-ownership's 'now'."
+    )
+    .option("--street-line1 <line>", "Beneficiary street line 1 (Travel Rule)")
+    .option("--street-line2 <line>", "Beneficiary street line 2 (Travel Rule)")
+    .option("--city <city>", "Beneficiary city (Travel Rule)")
+    .option("--state <state>", "Beneficiary state/province (Travel Rule)")
+    .option("--postal-code <code>", "Beneficiary postal code (Travel Rule)")
+    .option(
+      "--country-code <code>",
+      "Beneficiary country code, e.g. US (Travel Rule)"
+    )
     .action(
       async (opts: {
         firstName: string
@@ -116,6 +259,16 @@ export function registerContactsCommands(program: Command): void {
         clabe?: string
         walletAddress?: string
         network?: string
+        memo?: string
+        walletType?: string
+        attestOwnership?: boolean
+        walletAttestedAt?: string
+        streetLine1?: string
+        streetLine2?: string
+        city?: string
+        state?: string
+        postalCode?: string
+        countryCode?: string
       }) => {
         try {
           const globals = getGlobalOpts(program)
@@ -154,18 +307,83 @@ export function registerContactsCommands(program: Command): void {
           }
 
           if (opts.type === "crypto" && opts.walletAddress) {
-            const networkMap: Record<string, string> = {
-              stellar: "Stellar",
-              ethereum: "Ethereum",
-              solana: "Solana",
-              polygon: "Polygon",
+            // Validate the network up front — reject unknown values instead of
+            // silently defaulting to Stellar (which would send to the wrong
+            // chain). Default to Stellar only when --network is omitted.
+            const networkKey = (opts.network || "stellar").toLowerCase()
+            const network = NETWORK_MAP[networkKey]
+            if (!network) {
+              console.error(
+                `That network isn't supported. Pick one of: ${SUPPORTED_NETWORKS.join(", ")}, then try again.`
+              )
+              process.exit(1)
             }
-            data.cryptoAddressData = {
+
+            // Fail fast: a Stellar contact is unusable without a destination
+            // memo (Bridge rejects a stellar-rail destination without one, and
+            // the memo routes funds to the right account). Reject here before
+            // calling the API so we never create a contact that can't be paid.
+            if (network === "Stellar" && !opts.memo) {
+              console.error(
+                "Stellar contacts need a destination memo so your USDC reaches the right account — add one with --memo <memo> (you'll find it on the recipient's deposit details)."
+              )
+              process.exit(1)
+            }
+
+            const cryptoAddressData: CreateContactCryptoAddressData = {
               address: opts.walletAddress,
-              network:
-                networkMap[(opts.network || "stellar").toLowerCase()] ||
-                "Stellar",
+              network,
             }
+
+            // Destination memo (required for Stellar recipients to receive USDC).
+            if (opts.memo) cryptoAddressData.memo = opts.memo
+
+            if (opts.walletType) {
+              const walletType =
+                WALLET_TYPE_MAP[
+                  opts.walletType.toLowerCase().replace(/_/g, "-")
+                ]
+              if (!walletType) {
+                console.error(
+                  `That wallet type isn't recognized. Use one of: self-custodied, hosted, or external, then try again.`
+                )
+                process.exit(1)
+              }
+              cryptoAddressData.walletType = walletType
+            }
+
+            // Wallet-ownership attestation (Travel Rule, hosted/custodial
+            // wallets on $3,000+ sends). An explicit --wallet-attested-at wins;
+            // otherwise --attest-ownership stamps the current time. Must be a
+            // deliberate flag, never auto-set, for compliance.
+            if (opts.walletAttestedAt) {
+              const attestedAt = new Date(opts.walletAttestedAt)
+              if (Number.isNaN(attestedAt.getTime())) {
+                console.error(
+                  `That --wallet-attested-at value isn't a valid date. Use an ISO-8601 timestamp, e.g. 2026-06-17T00:00:00Z, then try again.`
+                )
+                process.exit(1)
+              }
+              cryptoAddressData.walletOwnershipAttestedAt =
+                attestedAt.toISOString()
+            } else if (opts.attestOwnership) {
+              cryptoAddressData.walletOwnershipAttestedAt =
+                new Date().toISOString()
+            }
+
+            if (opts.streetLine1)
+              cryptoAddressData.beneficiaryStreetLine1 = opts.streetLine1
+            if (opts.streetLine2)
+              cryptoAddressData.beneficiaryStreetLine2 = opts.streetLine2
+            if (opts.city) cryptoAddressData.beneficiaryCity = opts.city
+            if (opts.state)
+              cryptoAddressData.beneficiaryStateProvince = opts.state
+            if (opts.postalCode)
+              cryptoAddressData.beneficiaryPostalCode = opts.postalCode
+            if (opts.countryCode)
+              cryptoAddressData.beneficiaryCountryCode = opts.countryCode
+
+            data.cryptoAddressData = cryptoAddressData
           }
 
           const result = await client.createContact(data)
@@ -184,13 +402,19 @@ export function registerContactsCommands(program: Command): void {
 
   contacts
     .command("pay <nameOrId>")
-    .description("Pay a contact's bank account (accepts name or ID)")
+    .description(
+      "Pay a contact's bank account or crypto wallet (accepts name or ID)"
+    )
     .requiredOption("--amount <n>", "Amount to send", parseFloat)
     .option(
       "--currency <code>",
       "Currency code (inferred from bank account if omitted)"
     )
     .option("--bank-account-id <id>", "Bank account ID (prompts if multiple)")
+    .option(
+      "--crypto-address-id <id>",
+      "Crypto address ID for a Stablecoin contact (prompts if multiple)"
+    )
     .option("--note <note>", "Optional payment note")
     .option("-y, --yes", "Skip confirmation prompt")
     .action(
@@ -200,6 +424,7 @@ export function registerContactsCommands(program: Command): void {
           amount: number
           currency?: string
           bankAccountId?: string
+          cryptoAddressId?: string
           note?: string
           yes?: boolean
         }
@@ -232,6 +457,27 @@ export function registerContactsCommands(program: Command): void {
               })
               contact = contacts.find(c => c.id === choice)!
             }
+          }
+
+          const displayName = contact.first_name
+            ? `${contact.first_name} ${contact.last_name || ""}`.trim()
+            : contact.business_name || "your contact"
+
+          // Route Stablecoin/crypto contacts down the crypto path; only real
+          // Bank contacts reach the bank-account resolution (and its
+          // "no bank accounts" error) below.
+          if (isCryptoContact(contact)) {
+            await payCryptoContact({
+              client,
+              contact,
+              displayName,
+              amount: opts.amount,
+              cryptoAddressId: opts.cryptoAddressId,
+              note: opts.note,
+              yes: opts.yes,
+              format: globals.format,
+            })
+            return
           }
 
           let bankAccount: ContactBankAccount
@@ -287,9 +533,6 @@ export function registerContactsCommands(program: Command): void {
             process.exit(1)
           }
 
-          const displayName = contact.first_name
-            ? `${contact.first_name} ${contact.last_name || ""}`.trim()
-            : contact.business_name || "your contact"
           const accountLabel = `${bankAccount.bank_name || "Bank"} (****${(bankAccount.account_number || "").slice(-4)})`
 
           if (!opts.yes) {
@@ -323,21 +566,7 @@ export function registerContactsCommands(program: Command): void {
               )
             }
           } catch (err: unknown) {
-            const error = err as {
-              message?: string
-              statusCode?: number
-              status?: number
-            }
-            const code = error?.statusCode || error?.status
-            if (code === 402) {
-              console.error("Insufficient balance. Check with: blaze balance")
-            } else if (code === 422) {
-              console.error(`Payment rejected: ${error.message}`)
-            } else if (code === 429) {
-              console.error("Rate limited. Please wait a moment and try again.")
-            } else {
-              console.error(`Payment failed: ${error?.message || err}`)
-            }
+            reportPaymentError(err)
             process.exit(1)
           }
         } catch (err) {
@@ -381,4 +610,147 @@ const BRIDGE_TRANSFER_MINIMUMS_LOCAL: Record<string, number> = {
 
 function getMinimumTransferAmount(currency: string): number {
   return BRIDGE_TRANSFER_MINIMUMS_LOCAL[currency.toUpperCase()] || 5
+}
+
+// Maps a payment API error to a friendly console message. Shared by the bank
+// and crypto pay paths so both surface the same guidance.
+function reportPaymentError(err: unknown): void {
+  const error = err as {
+    message?: string
+    statusCode?: number
+    status?: number
+  }
+  const code = error?.statusCode || error?.status
+  // Surface the server's human-readable pre-check message as a friendly
+  // sentence. The backend may reject with 400 (validation) or 422 (business
+  // rule) — both carry a usable message — so treat them the same.
+  if (code === 402) {
+    console.error(
+      error?.message
+        ? `Insufficient balance. ${error.message}`
+        : "Insufficient balance. Check with: blaze balance"
+    )
+  } else if (code === 400 || code === 422) {
+    console.error(`Payment rejected: ${error.message}`)
+  } else if (code === 429) {
+    console.error("Rate limited. Please wait a moment and try again.")
+  } else {
+    // Strip any leading "HTTP NNN:" so 5xx errors read as a plain sentence.
+    const message = (error?.message ?? String(err)).replace(/^HTTP \d+:\s*/, "")
+    console.error(`Payment failed: ${message}`)
+  }
+}
+
+/**
+ * Sends USDC to a Stablecoin contact's crypto wallet.
+ *
+ * Crypto sends move USDC 1:1 with no fiat conversion. The amount is the USDC
+ * amount in major units (e.g. `5` = 5 USDC). Enforces the per-chain minimum
+ * ($1 USDC; dust below it is neither credited nor returned) and the Travel
+ * Rule beneficiary requirement for sends over $3,000 BEFORE submitting, since
+ * on-chain sends are irreversible.
+ */
+async function payCryptoContact(args: {
+  client: Awaited<ReturnType<typeof getClient>>
+  contact: Contact
+  displayName: string
+  amount: number
+  cryptoAddressId?: string
+  note?: string
+  yes?: boolean
+  format?: string
+}): Promise<void> {
+  const { client, contact, displayName, amount, note } = args
+
+  let cryptoAddress: ContactCryptoAddress
+  if (args.cryptoAddressId) {
+    const found = (contact.crypto_addresses || []).find(
+      ca => ca.id === args.cryptoAddressId
+    )
+    if (!found) {
+      console.error(
+        `Crypto address ID "${args.cryptoAddressId}" not found on this contact.`
+      )
+      process.exit(1)
+    }
+    cryptoAddress = found
+  } else {
+    cryptoAddress = await resolveCryptoAddress(contact)
+  }
+
+  // Crypto sends are denominated in USDC (1:1 with USD). value is in cents.
+  const usdcAmountInCents = Math.round(amount * 100)
+
+  // Per-chain minimum: dust below $1 USDC is neither credited nor returned.
+  if (usdcAmountInCents < CRYPTO_MINIMUM_CENTS) {
+    console.error(
+      `Minimum crypto send is $${(CRYPTO_MINIMUM_CENTS / 100).toFixed(2)} USDC. You requested $${amount.toFixed(2)} USDC — amounts below the minimum are lost on-chain.`
+    )
+    process.exit(1)
+  }
+
+  // Travel Rule: sends of $3,000 or more require beneficiary data on the
+  // address. Hosted/custodial wallets additionally require an ownership
+  // attestation — give those a precise re-add instruction.
+  if (
+    usdcAmountInCents >= TRAVEL_RULE_THRESHOLD_CENTS &&
+    !hasTravelRuleBeneficiaryData(cryptoAddress)
+  ) {
+    if (isMissingHostedAttestation(cryptoAddress)) {
+      console.error(
+        `This recipient's wallet is hosted/custodial and needs an ownership attestation to send $3,000 or more.\n` +
+          `Re-add the contact with: blaze contacts add ... --type crypto --wallet-type hosted --attest-ownership --street-line1 <...> --city <...> --postal-code <...> --country-code <...>`
+      )
+    } else {
+      console.error(
+        `This recipient needs beneficiary details to send $3,000 or more: add legal name, address, and wallet type.\n` +
+          `Update the contact with: blaze contacts add ... --type crypto --wallet-type <type> --street-line1 <...> --city <...> --postal-code <...> --country-code <...>`
+      )
+    }
+    process.exit(1)
+  }
+
+  // Balance pre-check.
+  const balance = await client.getBalance()
+  const availableCents =
+    typeof balance.available === "object"
+      ? balance.available.amount
+      : balance.available
+  if (availableCents < usdcAmountInCents) {
+    console.error(
+      `Insufficient balance. You have $${(availableCents / 100).toFixed(2)} available but this requires $${(usdcAmountInCents / 100).toFixed(2)}.`
+    )
+    process.exit(1)
+  }
+
+  const accountLabel = `${cryptoAddress.network} (${shortenAddress(cryptoAddress.address)})`
+
+  if (!args.yes) {
+    const confirmed = await confirm({
+      message: `Send ${amount} USDC to ${displayName} — ${accountLabel}? Crypto sends are irreversible and can't be cancelled once submitted.`,
+    })
+    if (!confirmed) {
+      console.log("Cancelled.")
+      return
+    }
+  }
+
+  try {
+    const result = await client.payContactCrypto(contact.id, cryptoAddress.id, {
+      usdcAmountInCents,
+      amount,
+      note,
+    })
+    if (args.format === "json") {
+      formatOutput(result, "json")
+    } else {
+      const noteClause = note ? ` with the note "${note}"` : ""
+      console.log(
+        `\nYour crypto send of ${amount} USDC to ${displayName} on ${accountLabel} has been submitted${noteClause}. Crypto sends are irreversible and usually settle on-chain within about 30 minutes.\n`
+      )
+    }
+  } catch (err: unknown) {
+    reportPaymentError(err)
+    process.exit(1)
+  }
 }

@@ -1,6 +1,14 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js"
 import { BlazeClient } from "../sdk/client"
 import type { Currency, WebhookEvent } from "../sdk/types"
+import {
+  deriveWithdrawalAmounts,
+  estimateWithdrawalArrival,
+  formatConnectedPaymentMethodLabel,
+  humanizeWithdrawIneligibilityReason,
+  mapToPaymentMethodType,
+  totalFeeCents,
+} from "../constants/withdrawal-format"
 import * as schemas from "./schemas"
 
 function jsonResult(data: unknown) {
@@ -1261,6 +1269,229 @@ export function registerTools(server: McpServer, client: BlazeClient): void {
     async params => {
       try {
         return jsonResult(await client.reconcileBankAccounts(params))
+      } catch (err) {
+        return errorResult(err)
+      }
+    }
+  )
+
+  // ============================================
+  // Consumer withdrawals — withdraw own balance to own connected method
+  // (bank/card). Personal/bearer session only. Tools 81-83.
+  // ============================================
+
+  // 81. List Connected Payment Methods (read-only)
+  server.tool(
+    "blaze_list_connected_payment_methods",
+    "List YOUR OWN connected payment methods (banks/debit cards) that you can withdraw your balance to. Requires a personal/bearer session. By default returns only withdrawal-eligible methods; pass all:true to include ones you can't withdraw to (with the ineligibility reason).",
+    schemas.listConnectedPaymentMethodsSchema.shape,
+    async ({ all }) => {
+      try {
+        const result = await client.listConnectedPaymentMethods()
+        const methods = all
+          ? result.methods
+          : result.methods.filter(m => m.canWithdraw)
+        return jsonResult({
+          methods,
+          defaultWithdrawalMethodId: result.defaultWithdrawalMethodId,
+        })
+      } catch (err) {
+        return errorResult(err)
+      }
+    }
+  )
+
+  // 82. Withdraw to Connected Payment Method — irreversible
+  server.tool(
+    "blaze_withdraw_to_payment_method",
+    "IRREVERSIBLE. Withdraw YOUR OWN balance to YOUR OWN connected payment method (bank/debit card). Requires a personal/bearer session. Always surface the amount AND destination to the user and get explicit consent BEFORE calling — confirm must be literally true. For USD the USDC amount equals the fiat amount; for other currencies the USDC amount is an FX estimate from the same client-side rate table the app uses.",
+    schemas.withdrawToPaymentMethodSchema.shape,
+    async params => {
+      try {
+        // Context guard: the consumer mutation reads userId from a personal
+        // (bearer) JWT — an API-key/business context is rejected server-side.
+        if (client.authContext === "business") {
+          return errorResult(
+            new Error(
+              "Withdrawing to your own connected method requires a personal session (bearer token), not an API key."
+            )
+          )
+        }
+
+        const currency = (params.currency ?? "USD").toUpperCase()
+
+        // Amount + currency math via the single source of truth.
+        const derived = deriveWithdrawalAmounts({
+          amount: params.amount,
+          currency,
+        })
+        if (!derived.ok) {
+          return errorResult(new Error(derived.error))
+        }
+        const { fiatAmountInCents, usdcAmountInCents } = derived.amounts
+
+        // Resolve the destination from the user's withdrawal-eligible methods.
+        const { methods } = await client.listConnectedPaymentMethods()
+        const eligible = methods.filter(m => m.canWithdraw)
+        const method = methods.find(m => m.id === params.payment_method_id)
+        if (!method) {
+          return errorResult(
+            new Error(
+              `Payment method "${params.payment_method_id}" is not one of your connected methods. Eligible: ${
+                eligible
+                  .map(m => `${m.id} (${formatConnectedPaymentMethodLabel(m)})`)
+                  .join(", ") || "none"
+              }.`
+            )
+          )
+        }
+        if (!method.canWithdraw) {
+          return errorResult(
+            new Error(
+              `That method (${formatConnectedPaymentMethodLabel(method)}) can't be withdrawn to: ${humanizeWithdrawIneligibilityReason(method.withdrawIneligibilityReason)}.`
+            )
+          )
+        }
+
+        // Instant default: cards push-to-card (instant), banks standard. The
+        // SAME value is used for the mutation and the arrival estimate.
+        const instantTransfer =
+          params.instant_transfer !== undefined
+            ? params.instant_transfer
+            : method.type === "Card"
+
+        // Balance pre-check (against the USDC amount drawn from balance).
+        const balance = await client.getBalance()
+        const availableCents =
+          typeof balance.available === "object"
+            ? (balance.available as { amount: number }).amount
+            : (balance.available as number)
+        if (availableCents < usdcAmountInCents) {
+          return errorResult(
+            new Error(
+              `You don't have enough balance for this withdrawal — it needs about $${(usdcAmountInCents / 100).toFixed(2)} but you have $${(availableCents / 100).toFixed(2)} available. Try a smaller amount or add funds first.`
+            )
+          )
+        }
+
+        // Minimum / limit pre-check via the live `checkLimits` query — the
+        // minimum is server-sourced (never hardcoded). Best-effort: if the
+        // check itself throws, continue (the server enforces on submit).
+        try {
+          const limits = await client.checkWithdrawalLimits({
+            paymentMethodId: method.id,
+            fiatAmountInCents,
+            currencyCode: currency,
+          })
+          if (!limits.meetsMinimum) {
+            return errorResult(
+              new Error(
+                `Withdrawals must be at least $${(limits.minimumAmountCents / 100).toFixed(2)} USD. You entered ${params.amount} ${currency}.`
+              )
+            )
+          }
+          if (!limits.isUnderLimit) {
+            const rem =
+              limits.remainingUsdCents != null
+                ? `$${(limits.remainingUsdCents / 100).toFixed(2)} USD`
+                : "none"
+            return errorResult(
+              new Error(
+                `This is over your current withdrawal limit — you have about ${rem} of your limit left right now.`
+              )
+            )
+          }
+        } catch {
+          // Limit check is best-effort; the server enforces minimums/limits on submit.
+        }
+
+        const result = await client.withdrawToPaymentMethod({
+          paymentMethodId: method.id,
+          usdcAmountInCents,
+          fiatAmountInCents,
+          currencyCode: currency,
+          instantTransfer,
+        })
+        // The SDK throws on a null result, but stay null-safe here.
+        if (!result) {
+          return errorResult(
+            new Error(
+              "Your withdrawal didn't return a result. Check your recent activity before retrying — it may already be processing."
+            )
+          )
+        }
+        // Best-effort: fetch the real fee from the submitted transfer. The
+        // withdrawal already succeeded, so a failed fetch must NOT error out.
+        let fee: string | undefined
+        try {
+          if (result.rampTransferId) {
+            const t = await client.getRampTransfer(result.rampTransferId)
+            const fc = totalFeeCents(t.feeCollections)
+            if (fc > 0) fee = `$${(fc / 100).toFixed(2)}`
+          }
+        } catch {
+          /* best-effort */
+        }
+        return jsonResult({
+          ...result,
+          fee, // e.g. "$2.00" (undefined if unknown)
+          estimatedArrival: estimateWithdrawalArrival({
+            instantTransfer,
+            currency,
+          }),
+        })
+      } catch (err) {
+        return errorResult(err)
+      }
+    }
+  )
+
+  // 83. Estimate Withdrawal Fee — read-only fee preview (no money moves)
+  server.tool(
+    "blaze_estimate_withdrawal_fee",
+    "Preview the EXACT withdrawal fee for a connected payment method BEFORE withdrawing (read-only; no money moves). Use this to tell the user the fee and total debited before they confirm an irreversible withdrawal. Resolves the destination from the user's withdrawal-eligible methods and uses the same `applicableFee` calculation the app shows.",
+    schemas.estimateWithdrawalFeeSchema.shape,
+    async params => {
+      try {
+        const { methods, countryCode } =
+          await client.listConnectedPaymentMethods()
+        const method = methods.find(m => m.id === params.payment_method_id)
+        if (!method || !method.canWithdraw) {
+          return errorResult(
+            new Error(
+              `Payment method "${params.payment_method_id}" is not one of your withdrawal-eligible methods.`
+            )
+          )
+        }
+
+        const currency = (params.currency ?? "USD").toUpperCase()
+        const derived = deriveWithdrawalAmounts({
+          amount: params.amount,
+          currency,
+        })
+        if (!derived.ok) {
+          return errorResult(new Error(derived.error))
+        }
+        const { usdcAmountInCents } = derived.amounts
+
+        const pmType = mapToPaymentMethodType(method.type)
+        const feeEst = pmType
+          ? await client.getApplicableWithdrawalFee({
+              paymentMethodType: pmType,
+              providerId: method.provider?.id,
+              countryCode,
+              amountCents: usdcAmountInCents,
+            })
+          : null
+        const feeCents = feeEst?.totalFeeCents ?? null
+
+        return jsonResult({
+          feeCents,
+          feeUsd: feeCents != null ? `$${(feeCents / 100).toFixed(2)}` : null,
+          displayName: feeEst?.displayName ?? null,
+          totalDebitedUsdc: `$${((usdcAmountInCents + (feeCents ?? 0)) / 100).toFixed(2)}`,
+          note: "Estimate; the exact fee is confirmed at withdrawal.",
+        })
       } catch (err) {
         return errorResult(err)
       }

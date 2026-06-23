@@ -1,6 +1,7 @@
 # CLI Reference
 
-The Blaze CLI provides command-line access to your Blaze account. Manage customers, transfers, payment links, and more directly from your terminal.
+The Blaze CLI provides command-line access to your Blaze account. Manage
+customers, transfers, payment links, and more directly from your terminal.
 
 ## Installation
 
@@ -18,20 +19,21 @@ After installing, the `blaze` command is available in your shell.
 
 These flags can be passed to any command.
 
-| Flag | Description |
-|------|-------------|
-| `--api-key <key>` | Override the API key for this invocation |
-| `--base-url <url>` | Override the API base URL |
-| `--format <json\|table>` | Output format. Defaults to `table` |
+| Flag                     | Description                              |
+| ------------------------ | ---------------------------------------- |
+| `--api-key <key>`        | Override the API key for this invocation |
+| `--base-url <url>`       | Override the API base URL                |
+| `--format <json\|table>` | Output format. Defaults to `table`       |
 
 ## Environment Variables
 
-| Variable | Description |
-|----------|-------------|
-| `BLAZE_API_KEY` | API key. Takes precedence over the config file but not the `--api-key` flag. |
-| `BLAZE_BASE_URL` | API base URL override. |
+| Variable         | Description                                                                  |
+| ---------------- | ---------------------------------------------------------------------------- |
+| `BLAZE_API_KEY`  | API key. Takes precedence over the config file but not the `--api-key` flag. |
+| `BLAZE_BASE_URL` | API base URL override.                                                       |
 
-See [Authentication](./authentication.md) for full details on key resolution order.
+See [Authentication](./authentication.md) for full details on key resolution
+order.
 
 ---
 
@@ -47,9 +49,9 @@ Store an API key in the local config file.
 blaze auth login --api-key sk_test_your_key_here
 ```
 
-| Flag | Required | Description |
-|------|----------|-------------|
-| `--api-key <key>` | Yes | The API key to store |
+| Flag              | Required | Description          |
+| ----------------- | -------- | -------------------- |
+| `--api-key <key>` | Yes      | The API key to store |
 
 The key is saved to `~/.blaze/config.json`.
 
@@ -113,11 +115,11 @@ Manage customers.
 blaze customers list [--limit N] [--email EMAIL] [--include-archived]
 ```
 
-| Flag | Description |
-|------|-------------|
-| `--limit N` | Max results to return (1-100) |
-| `--email EMAIL` | Filter by exact email |
-| `--include-archived` | Include archived customers |
+| Flag                 | Description                   |
+| -------------------- | ----------------------------- |
+| `--limit N`          | Max results to return (1-100) |
+| `--email EMAIL`      | Filter by exact email         |
+| `--include-archived` | Include archived customers    |
 
 **Example:**
 
@@ -149,12 +151,12 @@ blaze customers get cus_abc123
 blaze customers create --email <email> [--first-name NAME] [--last-name NAME] [--phone PHONE]
 ```
 
-| Flag | Required | Description |
-|------|----------|-------------|
-| `--email <email>` | Yes | Customer email |
-| `--first-name <name>` | No | First name |
-| `--last-name <name>` | No | Last name |
-| `--phone <phone>` | No | Phone number |
+| Flag                  | Required | Description    |
+| --------------------- | -------- | -------------- |
+| `--email <email>`     | Yes      | Customer email |
+| `--first-name <name>` | No       | First name     |
+| `--last-name <name>`  | No       | Last name      |
+| `--phone <phone>`     | No       | Phone number   |
 
 **Example:**
 
@@ -168,11 +170,11 @@ blaze customers create --email john@example.com --first-name John --last-name Do
 blaze customers update <id> [--first-name NAME] [--last-name NAME] [--phone PHONE]
 ```
 
-| Flag | Description |
-|------|-------------|
-| `--first-name <name>` | Update first name |
-| `--last-name <name>` | Update last name |
-| `--phone <phone>` | Update phone number |
+| Flag                  | Description         |
+| --------------------- | ------------------- |
+| `--first-name <name>` | Update first name   |
+| `--last-name <name>`  | Update last name    |
+| `--phone <phone>`     | Update phone number |
 
 **Example:**
 
@@ -206,9 +208,9 @@ Manage transfers between accounts.
 blaze transfers list [--limit N] [--status STATUS]
 ```
 
-| Flag | Description |
-|------|-------------|
-| `--limit N` | Max results to return (1-100) |
+| Flag              | Description                                              |
+| ----------------- | -------------------------------------------------------- |
+| `--limit N`       | Max results to return (1-100)                            |
 | `--status STATUS` | Filter by status (e.g. `pending`, `completed`, `failed`) |
 
 **Example:**
@@ -229,14 +231,14 @@ blaze transfers get <id>
 blaze transfers create --amount N [--currency CODE] [--customer-id ID] [--destination-type TYPE] [--destination-id ID] [--note TEXT]
 ```
 
-| Flag | Required | Description |
-|------|----------|-------------|
-| `--amount N` | Yes | Transfer amount in major units (e.g. `10` = $10.00) |
-| `--currency CODE` | No | Currency code (defaults to `USD`) |
-| `--customer-id ID` | No | Customer ID |
-| `--destination-type TYPE` | No | `wallet`, `external_account`, `virtual_account`, or `payment_link` |
-| `--destination-id ID` | No | Destination resource ID |
-| `--note TEXT` | No | Transfer note |
+| Flag                      | Required | Description                                                        |
+| ------------------------- | -------- | ------------------------------------------------------------------ |
+| `--amount N`              | Yes      | Transfer amount in major units (e.g. `10` = $10.00)                |
+| `--currency CODE`         | No       | Currency code (defaults to `USD`)                                  |
+| `--customer-id ID`        | No       | Customer ID                                                        |
+| `--destination-type TYPE` | No       | `wallet`, `external_account`, `virtual_account`, or `payment_link` |
+| `--destination-id ID`     | No       | Destination resource ID                                            |
+| `--note TEXT`             | No       | Transfer note                                                      |
 
 **Example:**
 
@@ -248,7 +250,13 @@ blaze transfers create --amount 500 --currency USD --customer-id cus_abc123 --de
 
 ## withdrawals
 
-Manage withdrawals to external accounts.
+Manage withdrawals. There are two distinct surfaces:
+
+- **Business payout** (`create`/`list`/`get`) — API-key scoped; pays out to a
+  _customer's_ pre-registered external account by ID.
+- **Personal cash-out** (`methods`/`to-method`/`status`) — requires a personal
+  login (`blaze auth login`); withdraws _your own_ balance to _your own_
+  connected bank account or debit card. Mirrors the mobile app's withdraw flow.
 
 ### withdrawals list
 
@@ -256,10 +264,10 @@ Manage withdrawals to external accounts.
 blaze withdrawals list [--limit N] [--status STATUS]
 ```
 
-| Flag | Description |
-|------|-------------|
-| `--limit N` | Max results to return (1-100) |
-| `--status STATUS` | Filter by status |
+| Flag              | Description                   |
+| ----------------- | ----------------------------- |
+| `--limit N`       | Max results to return (1-100) |
+| `--status STATUS` | Filter by status              |
 
 ### withdrawals get
 
@@ -273,18 +281,71 @@ blaze withdrawals get <id>
 blaze withdrawals create --external-account-id <id> --amount N [--currency CODE] [--note TEXT]
 ```
 
-| Flag | Required | Description |
-|------|----------|-------------|
-| `--external-account-id <id>` | Yes | External account to withdraw to |
-| `--amount N` | Yes | Withdrawal amount in major units (e.g. `10` = $10.00) |
-| `--currency CODE` | No | Currency code (defaults to `USD`) |
-| `--note TEXT` | No | Withdrawal note |
+| Flag                         | Required | Description                                           |
+| ---------------------------- | -------- | ----------------------------------------------------- |
+| `--external-account-id <id>` | Yes      | External account to withdraw to                       |
+| `--amount N`                 | Yes      | Withdrawal amount in major units (e.g. `10` = $10.00) |
+| `--currency CODE`            | No       | Currency code (defaults to `USD`)                     |
+| `--note TEXT`                | No       | Withdrawal note                                       |
 
 **Example:**
 
 ```bash
 blaze withdrawals create --external-account-id ext_xyz789 --amount 1000 --note "Monthly payout"
 ```
+
+### withdrawals methods
+
+List your own connected payment methods you can withdraw to (requires a personal
+login).
+
+```bash
+blaze withdrawals methods [--all]
+```
+
+| Flag    | Description                                                          |
+| ------- | -------------------------------------------------------------------- |
+| `--all` | Include methods you can't withdraw to, with the ineligibility reason |
+
+The default withdrawal method is marked with `*`. Only methods with
+`canWithdraw` are shown unless `--all` is passed.
+
+### withdrawals to-method
+
+Withdraw your own balance to your own connected bank account or debit card
+(requires a personal login). This is **irreversible** once submitted.
+
+```bash
+blaze withdrawals to-method --amount N [--payment-method-id <id>] [--currency CODE] [--instant | --no-instant] [--watch] [-y]
+```
+
+| Flag                       | Required | Description                                                                        |
+| -------------------------- | -------- | ---------------------------------------------------------------------------------- |
+| `--amount N`               | Yes      | Amount to withdraw in major units (e.g. `10` = $10.00)                             |
+| `--payment-method-id <id>` | No       | Destination method (prompts if you have more than one; required with `-y`)         |
+| `--currency CODE`          | No       | Currency code (defaults to `USD`). Non-USD uses a client-side FX estimate          |
+| `--instant`                | No       | Force an instant transfer                                                          |
+| `--no-instant`             | No       | Force a standard (non-instant) transfer (cards default to instant, banks standard) |
+| `--watch`                  | No       | Poll the withdrawal status until it settles (~2 min cap)                           |
+| `-y, --yes`                | No       | Skip the confirmation prompt                                                       |
+
+**Example:**
+
+```bash
+blaze withdrawals to-method --amount 25 --currency USD --watch
+```
+
+### withdrawals status
+
+Check the status of a personal withdrawal by its ramp transfer ID (requires a
+personal login).
+
+```bash
+blaze withdrawals status <rampTransferId>
+```
+
+Statuses: `Pending`, `PendingReview` (awaiting manual review), `Completed`,
+`Failed`.
 
 ---
 
@@ -298,9 +359,9 @@ Manage shareable payment links.
 blaze payment-links list [--limit N] [--status STATUS]
 ```
 
-| Flag | Description |
-|------|-------------|
-| `--limit N` | Max results to return (1-100) |
+| Flag              | Description                                                |
+| ----------------- | ---------------------------------------------------------- |
+| `--limit N`       | Max results to return (1-100)                              |
 | `--status STATUS` | Filter by status (e.g. `active`, `completed`, `cancelled`) |
 
 ### payment-links get
@@ -315,13 +376,13 @@ blaze payment-links get <id>
 blaze payment-links create --amount N [--currency CODE] [--name TEXT] [--note TEXT] [--success-url URL]
 ```
 
-| Flag | Required | Description |
-|------|----------|-------------|
-| `--amount N` | Yes | Payment amount in major units (e.g. `10` = $10.00) |
-| `--currency CODE` | No | Currency code (defaults to `USD`) |
-| `--name TEXT` | No | Display name |
-| `--note TEXT` | No | Note or description |
-| `--success-url URL` | No | Redirect URL after successful payment |
+| Flag                | Required | Description                                        |
+| ------------------- | -------- | -------------------------------------------------- |
+| `--amount N`        | Yes      | Payment amount in major units (e.g. `10` = $10.00) |
+| `--currency CODE`   | No       | Currency code (defaults to `USD`)                  |
+| `--name TEXT`       | No       | Display name                                       |
+| `--note TEXT`       | No       | Note or description                                |
+| `--success-url URL` | No       | Redirect URL after successful payment              |
 
 **Example:**
 
@@ -343,10 +404,10 @@ Payment link created:
 blaze payment-links update <id> [--name TEXT] [--note TEXT]
 ```
 
-| Flag | Description |
-|------|-------------|
+| Flag          | Description         |
+| ------------- | ------------------- |
 | `--name TEXT` | Update display name |
-| `--note TEXT` | Update note |
+| `--note TEXT` | Update note         |
 
 ### payment-links cancel
 
@@ -364,7 +425,8 @@ blaze payment-links cancel pml_abc123
 
 ## accounts
 
-Manage external accounts (bank accounts and crypto wallets) attached to customers.
+Manage external accounts (bank accounts and crypto wallets) attached to
+customers.
 
 ### accounts list
 
@@ -372,9 +434,9 @@ Manage external accounts (bank accounts and crypto wallets) attached to customer
 blaze accounts list --customer-id <id>
 ```
 
-| Flag | Required | Description |
-|------|----------|-------------|
-| `--customer-id <id>` | Yes | Customer ID |
+| Flag                 | Required | Description |
+| -------------------- | -------- | ----------- |
+| `--customer-id <id>` | Yes      | Customer ID |
 
 ### accounts create
 
@@ -382,35 +444,35 @@ blaze accounts list --customer-id <id>
 blaze accounts create --customer-id <id> --type <type> [bank/crypto fields]
 ```
 
-| Flag | Required | Description |
-|------|----------|-------------|
-| `--customer-id <id>` | Yes | Customer ID |
-| `--type <type>` | Yes | `us_bank`, `iban`, or `crypto_wallet` |
+| Flag                 | Required | Description                           |
+| -------------------- | -------- | ------------------------------------- |
+| `--customer-id <id>` | Yes      | Customer ID                           |
+| `--type <type>`      | Yes      | `us_bank`, `iban`, or `crypto_wallet` |
 
 **Additional flags for US bank accounts:**
 
-| Flag | Description |
-|------|-------------|
+| Flag                    | Description         |
+| ----------------------- | ------------------- |
 | `--account-holder-name` | Name on the account |
-| `--bank-name` | Bank name |
-| `--routing-number` | Routing number |
-| `--account-number` | Account number |
-| `--country-code` | Country code |
+| `--bank-name`           | Bank name           |
+| `--routing-number`      | Routing number      |
+| `--account-number`      | Account number      |
+| `--country-code`        | Country code        |
 
 **Additional flags for IBAN accounts:**
 
-| Flag | Description |
-|------|-------------|
+| Flag                    | Description         |
+| ----------------------- | ------------------- |
 | `--account-holder-name` | Name on the account |
-| `--iban` | IBAN |
-| `--country-code` | Country code |
+| `--iban`                | IBAN                |
+| `--country-code`        | Country code        |
 
 **Additional flags for crypto wallets:**
 
-| Flag | Description |
-|------|-------------|
-| `--wallet-address` | Wallet address |
-| `--network` | Network: `stellar`, `ethereum`, `polygon`, `solana`, or `base` |
+| Flag               | Description                                                    |
+| ------------------ | -------------------------------------------------------------- |
+| `--wallet-address` | Wallet address                                                 |
+| `--network`        | Network: `stellar`, `ethereum`, `polygon`, `solana`, or `base` |
 
 **Example:**
 
@@ -424,10 +486,10 @@ blaze accounts create --customer-id cus_abc123 --type us_bank --routing-number 0
 blaze accounts delete --customer-id <id> --account-id <id>
 ```
 
-| Flag | Required | Description |
-|------|----------|-------------|
-| `--customer-id <id>` | Yes | Customer ID |
-| `--account-id <id>` | Yes | External account ID |
+| Flag                 | Required | Description         |
+| -------------------- | -------- | ------------------- |
+| `--customer-id <id>` | Yes      | Customer ID         |
+| `--account-id <id>`  | Yes      | External account ID |
 
 ---
 
@@ -444,13 +506,196 @@ blaze recipients list [--limit N]
 ### recipients add
 
 ```bash
-blaze recipients add [fields]
+blaze recipients add --customer-id <id> --type <type> [fields]
+```
+
+| Flag                         | Required | Description                                                           |
+| ---------------------------- | -------- | --------------------------------------------------------------------- |
+| `--customer-id <id>`         | Yes      | Customer ID                                                           |
+| `--type <type>`              | Yes      | Account type: `us_bank`, `iban`, or `crypto_wallet`                   |
+| `--account-holder-name <n>`  | No       | Account holder name                                                   |
+| `--bank-name <name>`         | No       | Bank name                                                             |
+| `--routing-number <number>`  | No       | Routing number (`us_bank`)                                            |
+| `--account-number <number>`  | No       | Account number (`us_bank`)                                            |
+| `--iban <iban>`              | No       | IBAN (`iban` type)                                                    |
+| `--country-code <code>`      | No       | Country code                                                          |
+| `--wallet-address <address>` | No       | Wallet address (`crypto_wallet`)                                      |
+| `--network <network>`        | No       | Crypto network: `stellar`, `ethereum`, `polygon`, `solana`, or `base` |
+
+**Example:**
+
+```bash
+blaze recipients add --customer-id cus_123 --type us_bank --account-holder-name "Jane Doe" --routing-number 021000021 --account-number 1234567890
 ```
 
 ### recipients remove
 
 ```bash
 blaze recipients remove <id>
+```
+
+---
+
+## contacts
+
+Manage your personal contacts (consumer recipients) and pay them — either to a
+bank account (fiat payout) or to an external crypto wallet (USDC sent on-chain).
+
+Crypto sends are **Stablecoin** contacts. USDC is sent 1:1 (no fiat conversion).
+**Crypto sends are irreversible** once submitted on-chain — they cannot be
+cancelled or refunded.
+
+### Supported crypto networks
+
+`stellar`, `ethereum`, `polygon`, `solana`, `base`, `arbitrum`, `optimism`,
+`avalanche`
+
+USDC is sent on the network saved on the contact's crypto address. The
+per-network minimum is **$1.00 USDC** — amounts below the minimum are lost
+on-chain (neither credited nor returned), so sub-$1 sends are rejected before
+submission.
+
+### contacts list
+
+```bash
+blaze contacts list [--search TERM]
+```
+
+The account column shows the contact's bank account (e.g. `Chase (****7890)`)
+or, for Stablecoin contacts, their crypto address shortened by network (e.g.
+`Ethereum (0x1234…5678)`).
+
+### contacts add
+
+```bash
+blaze contacts add --first-name NAME --last-name NAME --phone E164 [options]
+```
+
+| Flag                         | Required | Description                                                                                                                                                                                                                                                                         |
+| ---------------------------- | -------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `--first-name <name>`        | Yes      | First name                                                                                                                                                                                                                                                                          |
+| `--last-name <name>`         | Yes      | Last name                                                                                                                                                                                                                                                                           |
+| `--phone <number>`           | Yes      | Phone number (E.164 format)                                                                                                                                                                                                                                                         |
+| `--type <type>`              | No       | `bank` (default), `clabe`, or `crypto`                                                                                                                                                                                                                                              |
+| `--category <cat>`           | No       | `Personal` (default) or `Business`                                                                                                                                                                                                                                                  |
+| `--email <email>`            | No       | Email address                                                                                                                                                                                                                                                                       |
+| `--routing-number <n>`       | No       | US routing number (bank)                                                                                                                                                                                                                                                            |
+| `--account-number <n>`       | No       | US account number (bank, required for `--type bank`)                                                                                                                                                                                                                                |
+| `--clabe <n>`                | No       | CLABE (Mexico, for `--type clabe`)                                                                                                                                                                                                                                                  |
+| `--wallet-address <address>` | No       | Crypto wallet address (for `--type crypto`)                                                                                                                                                                                                                                         |
+| `--network <network>`        | No       | Blockchain network (see Supported crypto networks). Defaults to `stellar` if omitted. **Unknown values are rejected** — there is no silent fallback.                                                                                                                                |
+| `--memo <memo>`              | No\*     | Destination memo (from the recipient's deposit details or exchange). **Required for Stellar contacts** — a Stellar contact cannot receive USDC without it, so `contacts add` rejects a Stellar contact with no `--memo` before calling the API. Optional/unused for other networks. |
+| `--wallet-type <type>`       | No       | Travel Rule wallet custody: `self-custodied`, `hosted`, or `external`                                                                                                                                                                                                               |
+| `--attest-ownership`         | No       | Record that you attest the recipient owns this hosted/custodial wallet (stamps the attestation timestamp to now). **Required for `hosted` wallets on $3,000+ sends.**                                                                                                               |
+| `--wallet-attested-at <iso>` | No       | Explicit wallet-ownership attestation timestamp (ISO-8601). Overrides `--attest-ownership`'s "now".                                                                                                                                                                                 |
+| `--street-line1 <line>`      | No       | Beneficiary street line 1 (Travel Rule)                                                                                                                                                                                                                                             |
+| `--street-line2 <line>`      | No       | Beneficiary street line 2 (Travel Rule)                                                                                                                                                                                                                                             |
+| `--city <city>`              | No       | Beneficiary city (Travel Rule)                                                                                                                                                                                                                                                      |
+| `--state <state>`            | No       | Beneficiary state/province (Travel Rule)                                                                                                                                                                                                                                            |
+| `--postal-code <code>`       | No       | Beneficiary postal code (Travel Rule)                                                                                                                                                                                                                                               |
+| `--country-code <code>`      | No       | Beneficiary country code, e.g. `US` (Travel Rule)                                                                                                                                                                                                                                   |
+
+**Add a crypto contact:**
+
+```bash
+blaze contacts add \
+  --first-name Ada --last-name Lovelace --phone +12025551234 \
+  --type crypto --wallet-address 0xAbC...123 --network ethereum
+```
+
+**Add a Stellar contact (memo required):** Stellar contacts must include a
+destination memo — funds won't reach the right account without it. Add it with
+`--memo`. Without it, `contacts add` stops before creating an unusable contact.
+
+```bash
+blaze contacts add \
+  --first-name Ada --last-name Lovelace --phone +12025551234 \
+  --type crypto --wallet-address GXXXX...XXXX --network stellar \
+  --memo 1234567890
+```
+
+**Add a crypto contact with Travel Rule beneficiary details** (required to send
+this contact **$3,000 or more** — see below):
+
+```bash
+blaze contacts add \
+  --first-name Ada --last-name Lovelace --phone +12025551234 \
+  --type crypto --wallet-address 0xAbC...123 --network ethereum \
+  --wallet-type self-custodied \
+  --street-line1 "1 Analytical Engine Way" --city London \
+  --postal-code "EC1A" --country-code GB
+```
+
+**Add a hosted/custodial crypto contact** (e.g. a Bitso or exchange deposit
+address). Hosted wallets need an ownership attestation to send **$3,000 or
+more** — add `--attest-ownership` (stamps the attestation as now) or
+`--wallet-attested-at <iso>` for an explicit date:
+
+```bash
+blaze contacts add \
+  --first-name Ada --last-name Lovelace --phone +12025551234 \
+  --type crypto --wallet-address 0xAbC...123 --network ethereum \
+  --wallet-type hosted --attest-ownership \
+  --street-line1 "1 Analytical Engine Way" --city London \
+  --postal-code "EC1A" --country-code GB
+```
+
+### contacts pay
+
+```bash
+blaze contacts pay <nameOrId> --amount N [options]
+```
+
+| Flag                       | Required | Description                                                                                                                    |
+| -------------------------- | -------- | ------------------------------------------------------------------------------------------------------------------------------ |
+| `--amount <n>`             | Yes      | Amount to send (USDC for crypto contacts; fiat in `--currency` for bank contacts)                                              |
+| `--currency <code>`        | No       | Currency code for a bank contact (inferred from the bank account if omitted). Ignored for crypto sends, which are always USDC. |
+| `--bank-account-id <id>`   | No       | Bank account ID for a bank contact (prompts if the contact has multiple)                                                       |
+| `--crypto-address-id <id>` | No       | Crypto address ID for a Stablecoin contact (prompts if the contact has multiple)                                               |
+| `--note <note>`            | No       | Optional payment note                                                                                                          |
+| `-y, --yes`                | No       | Skip the confirmation prompt                                                                                                   |
+
+`contacts pay` detects the contact type automatically: a **Stablecoin** contact
+is paid on-chain in USDC; a **Bank** contact is paid to a bank account. The "no
+bank accounts" error only fires for genuine bank contacts.
+
+**Pay a crypto contact:**
+
+```bash
+blaze contacts pay Ada --amount 25
+```
+
+You will be asked to confirm before the send, and the confirmation makes clear
+that crypto sends are irreversible.
+
+### Travel Rule: sends of $3,000 or more
+
+US Travel Rule rules require beneficiary information for any crypto send of
+**$3,000 or more**. Before sending $3,000 or more to a crypto contact, that
+contact's crypto address must have:
+
+- **Legal name** (taken from the contact's first/last or business name)
+- **Physical address** (`--street-line1`, `--city`, `--postal-code`,
+  `--country-code`)
+- **Wallet type** (`--wallet-type`)
+
+**Hosted/custodial wallets need one more thing — an ownership attestation.**
+When `--wallet-type` is `hosted` (e.g. a Bitso or exchange deposit address),
+Bridge requires a wallet-ownership attestation timestamp on top of the
+beneficiary fields above. Provide it with `--attest-ownership` (stamps the
+attestation as now) or `--wallet-attested-at <iso>` for an explicit date.
+Self-custodied and external (self-hosted) wallets do **not** need it.
+
+If any of the required data is missing, `contacts pay` rejects the send before
+submitting with an actionable error telling you what to add. For a hosted wallet
+missing only the attestation, the error tells you to re-add the contact with
+`--wallet-type hosted ... --attest-ownership`. Add the data via `contacts add`
+(see the Travel Rule examples above).
+
+### contacts remove
+
+```bash
+blaze contacts remove <id> [-y]
 ```
 
 ---
@@ -465,11 +710,11 @@ View transaction history.
 blaze transactions list [--limit N] [--type TYPE] [--status STATUS]
 ```
 
-| Flag | Description |
-|------|-------------|
-| `--limit N` | Max results to return (1-100) |
-| `--type TYPE` | Filter by transaction type |
-| `--status STATUS` | Filter by status |
+| Flag              | Description                   |
+| ----------------- | ----------------------------- |
+| `--limit N`       | Max results to return (1-100) |
+| `--type TYPE`     | Filter by transaction type    |
+| `--status STATUS` | Filter by status              |
 
 **Example:**
 
@@ -493,7 +738,8 @@ blaze transactions get <id>
 
 ## agent
 
-Run natural language commands through the agent mode. See [Agent Mode](./agent.md) for full details.
+Run natural language commands through the agent mode. See
+[Agent Mode](./agent.md) for full details.
 
 ```bash
 blaze agent "<command>"
@@ -527,12 +773,12 @@ Lists all API keys with their name, prefix, scopes, and status.
 blaze api-keys create --name <name> --scopes <scopes> [--test] [--expires-in-days <n>]
 ```
 
-| Flag | Required | Description |
-|------|----------|-------------|
-| `--name <name>` | Yes | Friendly name for the key |
-| `--scopes <scopes>` | Yes | Comma-separated permission scopes |
-| `--test` | No | Create a test key instead of live |
-| `--expires-in-days <n>` | No | Days until key expires |
+| Flag                    | Required | Description                       |
+| ----------------------- | -------- | --------------------------------- |
+| `--name <name>`         | Yes      | Friendly name for the key         |
+| `--scopes <scopes>`     | Yes      | Comma-separated permission scopes |
+| `--test`                | No       | Create a test key instead of live |
+| `--expires-in-days <n>` | No       | Days until key expires            |
 
 **Example:**
 
@@ -546,9 +792,9 @@ blaze api-keys create --name "CI Pipeline" --scopes TRANSACTIONS_READ,BALANCE_RE
 blaze api-keys update <id> --scopes <scopes>
 ```
 
-| Flag | Required | Description |
-|------|----------|-------------|
-| `--scopes <scopes>` | Yes | New comma-separated permission scopes |
+| Flag                | Required | Description                           |
+| ------------------- | -------- | ------------------------------------- |
+| `--scopes <scopes>` | Yes      | New comma-separated permission scopes |
 
 ### api-keys revoke
 
@@ -556,10 +802,10 @@ blaze api-keys update <id> --scopes <scopes>
 blaze api-keys revoke <id> [--reason <reason>] [--yes]
 ```
 
-| Flag | Required | Description |
-|------|----------|-------------|
-| `--reason <reason>` | No | Reason for revocation |
-| `--yes` | No | Skip confirmation prompt |
+| Flag                | Required | Description              |
+| ------------------- | -------- | ------------------------ |
+| `--reason <reason>` | No       | Reason for revocation    |
+| `--yes`             | No       | Skip confirmation prompt |
 
 **Example:**
 
@@ -595,10 +841,10 @@ Lists pending invitations that have not yet been accepted.
 blaze team invite --email <email> --role <role>
 ```
 
-| Flag | Required | Description |
-|------|----------|-------------|
-| `--email <email>` | Yes | Email address to invite |
-| `--role <role>` | Yes | Role: `admin`, `finance`, `support`, `developer`, `view_only`, `member` |
+| Flag              | Required | Description                                                             |
+| ----------------- | -------- | ----------------------------------------------------------------------- |
+| `--email <email>` | Yes      | Email address to invite                                                 |
+| `--role <role>`   | Yes      | Role: `admin`, `finance`, `support`, `developer`, `view_only`, `member` |
 
 **Example:**
 
@@ -612,9 +858,9 @@ blaze team invite --email jane@company.com --role developer
 blaze team update-role <id> --role <role>
 ```
 
-| Flag | Required | Description |
-|------|----------|-------------|
-| `--role <role>` | Yes | New role to assign |
+| Flag            | Required | Description        |
+| --------------- | -------- | ------------------ |
+| `--role <role>` | Yes      | New role to assign |
 
 ### team remove
 
@@ -622,9 +868,9 @@ blaze team update-role <id> --role <role>
 blaze team remove <id> [--yes]
 ```
 
-| Flag | Required | Description |
-|------|----------|-------------|
-| `--yes` | No | Skip confirmation prompt |
+| Flag    | Required | Description              |
+| ------- | -------- | ------------------------ |
+| `--yes` | No       | Skip confirmation prompt |
 
 ### team transfer-ownership
 
@@ -632,10 +878,10 @@ blaze team remove <id> [--yes]
 blaze team transfer-ownership --new-owner-id <id> [--yes]
 ```
 
-| Flag | Required | Description |
-|------|----------|-------------|
-| `--new-owner-id <id>` | Yes | Team member ID of the new owner |
-| `--yes` | No | Skip confirmation prompt |
+| Flag                  | Required | Description                     |
+| --------------------- | -------- | ------------------------------- |
+| `--new-owner-id <id>` | Yes      | Team member ID of the new owner |
+| `--yes`               | No       | Skip confirmation prompt        |
 
 ---
 
@@ -649,8 +895,8 @@ Manage webhook endpoints.
 blaze webhooks list [--limit <n>]
 ```
 
-| Flag | Description |
-|------|-------------|
+| Flag          | Description                   |
+| ------------- | ----------------------------- |
 | `--limit <n>` | Max results to return (1-100) |
 
 ### webhooks get
@@ -665,11 +911,11 @@ blaze webhooks get <id>
 blaze webhooks create --url <url> [--events <events>] [--description <desc>]
 ```
 
-| Flag | Required | Description |
-|------|----------|-------------|
-| `--url <url>` | Yes | HTTPS URL to receive events |
-| `--events <events>` | No | Comma-separated event types to subscribe to |
-| `--description <desc>` | No | Description of the endpoint |
+| Flag                   | Required | Description                                 |
+| ---------------------- | -------- | ------------------------------------------- |
+| `--url <url>`          | Yes      | HTTPS URL to receive events                 |
+| `--events <events>`    | No       | Comma-separated event types to subscribe to |
+| `--description <desc>` | No       | Description of the endpoint                 |
 
 **Example:**
 
@@ -683,13 +929,13 @@ blaze webhooks create --url "https://example.com/webhooks" --events "payment.com
 blaze webhooks update <id> [--url <url>] [--events <events>] [--enabled] [--disabled] [--description <desc>]
 ```
 
-| Flag | Description |
-|------|-------------|
-| `--url <url>` | New URL |
-| `--events <events>` | New comma-separated event subscriptions |
-| `--enabled` | Enable the endpoint |
-| `--disabled` | Disable the endpoint |
-| `--description <desc>` | Updated description |
+| Flag                   | Description                             |
+| ---------------------- | --------------------------------------- |
+| `--url <url>`          | New URL                                 |
+| `--events <events>`    | New comma-separated event subscriptions |
+| `--enabled`            | Enable the endpoint                     |
+| `--disabled`           | Disable the endpoint                    |
+| `--description <desc>` | Updated description                     |
 
 ### webhooks delete
 
@@ -697,8 +943,8 @@ blaze webhooks update <id> [--url <url>] [--events <events>] [--enabled] [--disa
 blaze webhooks delete <id> [--yes]
 ```
 
-| Flag | Description |
-|------|-------------|
+| Flag    | Description              |
+| ------- | ------------------------ |
 | `--yes` | Skip confirmation prompt |
 
 ---
@@ -713,11 +959,12 @@ View transaction analytics.
 blaze analytics overview [--period <period>]
 ```
 
-| Flag | Description |
-|------|-------------|
+| Flag                | Description               |
+| ------------------- | ------------------------- |
 | `--period <period>` | Time period for analytics |
 
-**Available periods:** `LAST_7_DAYS`, `LAST_30_DAYS`, `LAST_90_DAYS`, `LAST_365_DAYS`
+**Available periods:** `LAST_7_DAYS`, `LAST_30_DAYS`, `LAST_90_DAYS`,
+`LAST_365_DAYS`
 
 **Example:**
 
@@ -747,9 +994,9 @@ Manage payment disputes.
 blaze disputes list [--limit <n>] [--status <status>]
 ```
 
-| Flag | Description |
-|------|-------------|
-| `--limit <n>` | Max results to return (1-100) |
+| Flag                | Description                                                   |
+| ------------------- | ------------------------------------------------------------- |
+| `--limit <n>`       | Max results to return (1-100)                                 |
 | `--status <status>` | Filter by status (e.g. `open`, `under_review`, `won`, `lost`) |
 
 ### disputes get
@@ -764,10 +1011,10 @@ blaze disputes get <id>
 blaze disputes submit-evidence <id> --description <desc> [--document-urls <urls>]
 ```
 
-| Flag | Required | Description |
-|------|----------|-------------|
-| `--description <desc>` | Yes | Evidence description |
-| `--document-urls <urls>` | No | Comma-separated URLs to supporting documents |
+| Flag                     | Required | Description                                  |
+| ------------------------ | -------- | -------------------------------------------- |
+| `--description <desc>`   | Yes      | Evidence description                         |
+| `--document-urls <urls>` | No       | Comma-separated URLs to supporting documents |
 
 **Example:**
 
@@ -793,11 +1040,11 @@ Manage invoices.
 blaze invoices list [--limit <n>] [--status <status>] [--customer-id <id>]
 ```
 
-| Flag | Description |
-|------|-------------|
-| `--limit <n>` | Max results to return (1-100) |
-| `--status <status>` | Filter by status (e.g. `draft`, `sent`, `paid`, `void`) |
-| `--customer-id <id>` | Filter by customer |
+| Flag                 | Description                                             |
+| -------------------- | ------------------------------------------------------- |
+| `--limit <n>`        | Max results to return (1-100)                           |
+| `--status <status>`  | Filter by status (e.g. `draft`, `sent`, `paid`, `void`) |
+| `--customer-id <id>` | Filter by customer                                      |
 
 ### invoices get
 
@@ -811,14 +1058,14 @@ blaze invoices get <id>
 blaze invoices create --customer-id <id> --line-items <json> [--tax <n>] [--description <desc>] [--due-date <date>] [--currency <code>]
 ```
 
-| Flag | Required | Description |
-|------|----------|-------------|
-| `--customer-id <id>` | Yes | Customer to invoice |
-| `--line-items <json>` | Yes | JSON array of line items |
-| `--tax <n>` | No | Tax amount |
-| `--description <desc>` | No | Invoice description |
-| `--due-date <date>` | No | Due date (ISO 8601) |
-| `--currency <code>` | No | Currency code (defaults to `USD`) |
+| Flag                   | Required | Description                       |
+| ---------------------- | -------- | --------------------------------- |
+| `--customer-id <id>`   | Yes      | Customer to invoice               |
+| `--line-items <json>`  | Yes      | JSON array of line items          |
+| `--tax <n>`            | No       | Tax amount                        |
+| `--description <desc>` | No       | Invoice description               |
+| `--due-date <date>`    | No       | Due date (ISO 8601)               |
+| `--currency <code>`    | No       | Currency code (defaults to `USD`) |
 
 **Example:**
 
@@ -862,11 +1109,11 @@ Manage recurring billing subscriptions.
 blaze subscriptions list [--limit <n>] [--status <status>] [--customer-id <id>]
 ```
 
-| Flag | Description |
-|------|-------------|
-| `--limit <n>` | Max results to return (1-100) |
-| `--status <status>` | Filter by status (e.g. `active`, `paused`, `canceled`) |
-| `--customer-id <id>` | Filter by customer |
+| Flag                 | Description                                            |
+| -------------------- | ------------------------------------------------------ |
+| `--limit <n>`        | Max results to return (1-100)                          |
+| `--status <status>`  | Filter by status (e.g. `active`, `paused`, `canceled`) |
+| `--customer-id <id>` | Filter by customer                                     |
 
 ### subscriptions get
 
@@ -880,11 +1127,11 @@ blaze subscriptions get <id>
 blaze subscriptions create --customer-id <id> --product-id <id> [--interval <interval>]
 ```
 
-| Flag | Required | Description |
-|------|----------|-------------|
-| `--customer-id <id>` | Yes | Customer ID |
-| `--product-id <id>` | Yes | Product ID to subscribe to |
-| `--interval <interval>` | No | Billing interval (e.g. `monthly`, `yearly`) |
+| Flag                    | Required | Description                                 |
+| ----------------------- | -------- | ------------------------------------------- |
+| `--customer-id <id>`    | Yes      | Customer ID                                 |
+| `--product-id <id>`     | Yes      | Product ID to subscribe to                  |
+| `--interval <interval>` | No       | Billing interval (e.g. `monthly`, `yearly`) |
 
 **Example:**
 
@@ -898,8 +1145,8 @@ blaze subscriptions create --customer-id cus_abc123 --product-id prod_xyz789 --i
 blaze subscriptions cancel <id> [--immediately]
 ```
 
-| Flag | Description |
-|------|-------------|
+| Flag            | Description                                 |
+| --------------- | ------------------------------------------- |
 | `--immediately` | Cancel immediately instead of at period end |
 
 ### subscriptions pause
@@ -930,8 +1177,8 @@ Get exchange rates and create FX quotes.
 blaze fx rates [--base <currency>]
 ```
 
-| Flag | Description |
-|------|-------------|
+| Flag                | Description                            |
+| ------------------- | -------------------------------------- |
 | `--base <currency>` | Base currency code (defaults to `USD`) |
 
 **Example:**
@@ -954,11 +1201,11 @@ BRL:  4.97
 blaze fx quote --from <currency> --to <currency> --amount <n>
 ```
 
-| Flag | Required | Description |
-|------|----------|-------------|
-| `--from <currency>` | Yes | Source currency code |
-| `--to <currency>` | Yes | Target currency code |
-| `--amount <n>` | Yes | Amount in source currency, in major units (e.g. `1000` = 1000 USD) |
+| Flag                | Required | Description                                                        |
+| ------------------- | -------- | ------------------------------------------------------------------ |
+| `--from <currency>` | Yes      | Source currency code                                               |
+| `--to <currency>`   | Yes      | Target currency code                                               |
+| `--amount <n>`      | Yes      | Amount in source currency, in major units (e.g. `1000` = 1000 USD) |
 
 **Example:**
 
@@ -978,7 +1225,8 @@ Expires:      2025-03-15T12:30:00Z
 
 ## setup
 
-Interactive onboarding flow — authenticate, confirm/create a business, and generate an API key. Use this the first time you install the CLI.
+Interactive onboarding flow — authenticate, confirm/create a business, and
+generate an API key. Use this the first time you install the CLI.
 
 ```bash
 blaze setup
@@ -986,18 +1234,21 @@ blaze setup
 
 Walks through:
 
-1. Pick an authentication method (browser OAuth, JWT token, or paste an existing API key)
+1. Pick an authentication method (browser OAuth, JWT token, or paste an existing
+   API key)
 2. Confirm an existing business or create a new one
 3. Generate a scoped API key (test or live)
 4. Verify the key by fetching your balance
 
-The resulting config is saved to `~/.blaze/config.json`. Cancel anytime with Ctrl+C.
+The resulting config is saved to `~/.blaze/config.json`. Cancel anytime with
+Ctrl+C.
 
 ---
 
 ## whoami
 
-Show the currently active authentication source and business context. Use this whenever a command behaves unexpectedly.
+Show the currently active authentication source and business context. Use this
+whenever a command behaves unexpectedly.
 
 ```bash
 blaze whoami
@@ -1012,7 +1263,9 @@ Active business: Blaze Payments (Admin) — bus_xyz789
 API base URL:    https://api.blaze.money
 ```
 
-Unlike `blaze auth whoami` (which only checks the configured API key), `blaze whoami` includes the active business, the auth source in effect (bearer token vs API key vs config file), and bearer-token expiry.
+Unlike `blaze auth whoami` (which only checks the configured API key),
+`blaze whoami` includes the active business, the auth source in effect (bearer
+token vs API key vs config file), and bearer-token expiry.
 
 ---
 
@@ -1036,15 +1289,17 @@ Set or update your blazetag — the `@handle` you use on the Blaze P2P network.
 blaze me blazetag <tag>
 ```
 
-| Argument | Required | Description |
-|---|---|---|
-| `<tag>` | Yes | Your new blazetag (e.g. `gerson` → shows as `@gerson`) |
+| Argument | Required | Description                                            |
+| -------- | -------- | ------------------------------------------------------ |
+| `<tag>`  | Yes      | Your new blazetag (e.g. `gerson` → shows as `@gerson`) |
 
 ---
 
 ## businesses
 
-Manage which business context the CLI uses for requests. Required when your account is a member of one or more businesses and you want the API to return business-scoped data.
+Manage which business context the CLI uses for requests. Required when your
+account is a member of one or more businesses and you want the API to return
+business-scoped data.
 
 ### businesses list
 
@@ -1056,7 +1311,8 @@ Lists every business you belong to with your role for each.
 
 ### businesses use
 
-Switch the active business context. Subsequent commands will send `x-business-id: <businessId>` so the API returns business-scoped data.
+Switch the active business context. Subsequent commands will send
+`x-business-id: <businessId>` so the API returns business-scoped data.
 
 ```bash
 # Switch into a business
@@ -1066,7 +1322,9 @@ blaze businesses use bus_abc123
 blaze businesses use
 ```
 
-The active business is persisted in `~/.blaze/config.json` and survives between shell sessions. Per-command override: `--business <id>` (force a specific business) or `--personal` (ignore active business for this call).
+The active business is persisted in `~/.blaze/config.json` and survives between
+shell sessions. Per-command override: `--business <id>` (force a specific
+business) or `--personal` (ignore active business for this call).
 
 ---
 
@@ -1082,79 +1340,16 @@ blaze send @alex --amount 25
 blaze send "Alex Rivera" --amount 25 --note "Coffee"
 ```
 
-| Flag | Required | Description |
-|---|---|---|
-| `<recipient>` | Yes | Positional. Blazetag like `@alex` or a name to fuzzy-search |
-| `--amount <n>` | Yes | Amount to send in major units (e.g. `25` = $25.00) |
-| `--currency <code>` | No | Three-letter currency code (default `USD`). Non-USD/USDC routes through an FX quote first |
-| `--note <text>` | No | Optional payment note |
-| `-y`, `--yes` | No | Skip the confirmation prompt |
+| Flag                | Required | Description                                                                               |
+| ------------------- | -------- | ----------------------------------------------------------------------------------------- |
+| `<recipient>`       | Yes      | Positional. Blazetag like `@alex` or a name to fuzzy-search                               |
+| `--amount <n>`      | Yes      | Amount to send in major units (e.g. `25` = $25.00)                                        |
+| `--currency <code>` | No       | Three-letter currency code (default `USD`). Non-USD/USDC routes through an FX quote first |
+| `--note <text>`     | No       | Optional payment note                                                                     |
+| `-y`, `--yes`       | No       | Skip the confirmation prompt                                                              |
 
-`blaze send` only delivers to other Blaze users. To pay an external bank account or crypto wallet, use [contacts pay](#contacts-pay).
-
----
-
-## contacts
-
-Manage saved external recipients (bank accounts, CLABEs, crypto wallets) and pay them directly. Contacts are CLI-only — they are not exposed through the MCP server.
-
-### contacts list
-
-```bash
-blaze contacts list
-blaze contacts list --search "Acme"
-```
-
-### contacts add
-
-Add a new contact.
-
-```bash
-# US bank account
-blaze contacts add \
-  --first-name Alex --last-name Rivera \
-  --phone +14155551234 \
-  --type bank \
-  --routing-number 121000248 \
-  --account-number 1234567890
-
-# Mexican CLABE
-blaze contacts add \
-  --first-name Maria --last-name Lopez \
-  --phone +525555551234 \
-  --type clabe --clabe 002180078000001234
-
-# Crypto wallet
-blaze contacts add \
-  --first-name Pat --last-name Doe \
-  --phone +14155555678 \
-  --type crypto \
-  --wallet-address GABC...XYZ --network stellar
-```
-
-### contacts pay
-
-Pay a contact's bank account by name or ID. Confirms before sending (use `-y` to skip).
-
-```bash
-blaze contacts pay "Acme Supplies" --amount 250.00
-```
-
-| Flag | Required | Description |
-|---|---|---|
-| `<nameOrId>` | Yes | Contact name (fuzzy search) or CUID |
-| `--amount <n>` | Yes | Amount to send in major units (e.g. `250` = $250.00) |
-| `--currency <code>` | No | Defaults to the bank account's currency |
-| `--bank-account-id <id>` | No | Pick a specific account (prompts if multiple and omitted) |
-| `--note <text>` | No | Optional payment note |
-| `-y`, `--yes` | No | Skip the confirmation prompt |
-
-### contacts remove
-
-```bash
-blaze contacts remove <id>
-blaze contacts remove <id> --yes   # skip confirmation
-```
+`blaze send` only delivers to other Blaze users. To pay an external bank account
+or crypto wallet, use [contacts pay](#contacts-pay).
 
 ---
 
@@ -1179,7 +1374,10 @@ blaze payments get <id>
 
 ## bills
 
-Accounts Payable bills — Gmail-synced invoice ingestion, approval workflow, and the two-phase quote-then-confirm payment pattern. Requires a business context (`blaze businesses use <id>`) and the `BILLS_PAGE` feature enabled on the business.
+Accounts Payable bills — Gmail-synced invoice ingestion, approval workflow, and
+the two-phase quote-then-confirm payment pattern. Requires a business context
+(`blaze businesses use <id>`) and the `BILLS_PAGE` feature enabled on the
+business.
 
 ### bills list
 
@@ -1204,19 +1402,20 @@ blaze bills reject <id> --reason "duplicate"
 
 ### bills pay
 
-Two-phase quote-then-confirm payment. The CLI fetches a quote (amount + fees + ETA), prints it, and waits for your `yes` before executing.
+Two-phase quote-then-confirm payment. The CLI fetches a quote (amount + fees +
+ETA), prints it, and waits for your `yes` before executing.
 
 ```bash
 blaze bills pay <id>
 blaze bills pay <id> --from <fundingAccountId> --expedite -y
 ```
 
-| Flag | Required | Description |
-|---|---|---|
-| `<id>` | Yes | Bill ID |
-| `--from <id>` | No | Source funding account (defaults to the business's default wallet) |
-| `--expedite` | No | Pay via expedited routing if available (higher fees) |
-| `-y`, `--yes` | No | Skip the confirmation prompt after the quote is shown |
+| Flag          | Required | Description                                                        |
+| ------------- | -------- | ------------------------------------------------------------------ |
+| `<id>`        | Yes      | Bill ID                                                            |
+| `--from <id>` | No       | Source funding account (defaults to the business's default wallet) |
+| `--expedite`  | No       | Pay via expedited routing if available (higher fees)               |
+| `-y`, `--yes` | No       | Skip the confirmation prompt after the quote is shown              |
 
 ### bills pending-approvals
 
@@ -1252,7 +1451,8 @@ blaze bills connect-gmail
 blaze bills connect-gmail --no-browser   # print URL only; don't auto-open
 ```
 
-Prints a URL, waits for you to authenticate, then polls the session for up to 5 minutes.
+Prints a URL, waits for you to authenticate, then polls the session for up to 5
+minutes.
 
 ### bills gmail-integrations
 
@@ -1282,7 +1482,9 @@ blaze bills setup
 
 ## insights
 
-Read-only analytics over the business's Plaid-connected bank accounts. Requires the `SPENDING_INSIGHTS` feature gate enabled on the business and at least one connected bank.
+Read-only analytics over the business's Plaid-connected bank accounts. Requires
+the `SPENDING_INSIGHTS` feature gate enabled on the business and at least one
+connected bank.
 
 ### insights summary
 
@@ -1297,11 +1499,11 @@ blaze insights summary --period 3m
 blaze insights summary --start-date 2026-04-01 --end-date 2026-04-30
 ```
 
-| Flag | Description |
-|---|---|
+| Flag                  | Description                                                                                                          |
+| --------------------- | -------------------------------------------------------------------------------------------------------------------- |
 | `--period <duration>` | Quick range: `7d`, `30d`, `90d`, `1m`, `3m`, `6m`, `1y`. Overrides `--start-date`/`--end-date` when both are passed. |
-| `--start-date <iso>` | Filter range start (ISO 8601). Ignored if `--period` is set. |
-| `--end-date <iso>` | Filter range end (ISO 8601). Ignored if `--period` is set. |
+| `--start-date <iso>`  | Filter range start (ISO 8601). Ignored if `--period` is set.                                                         |
+| `--end-date <iso>`    | Filter range end (ISO 8601). Ignored if `--period` is set.                                                           |
 
 ### insights transactions
 
@@ -1314,14 +1516,14 @@ blaze insights transactions \
   --start-date 2026-04-01 --account-id acc_abc --cursor <c>
 ```
 
-| Flag | Description |
-|---|---|
+| Flag                  | Description                                                                                                          |
+| --------------------- | -------------------------------------------------------------------------------------------------------------------- |
 | `--period <duration>` | Quick range: `7d`, `30d`, `90d`, `1m`, `3m`, `6m`, `1y`. Overrides `--start-date`/`--end-date` when both are passed. |
-| `--start-date <iso>` | Filter range start (ISO 8601) |
-| `--end-date <iso>` | Filter range end (ISO 8601) |
-| `--account-id <id>` | Filter to a single connected Plaid account |
-| `--limit <n>` | Page size (max 100) |
-| `--cursor <c>` | Pagination cursor |
+| `--start-date <iso>`  | Filter range start (ISO 8601)                                                                                        |
+| `--end-date <iso>`    | Filter range end (ISO 8601)                                                                                          |
+| `--account-id <id>`   | Filter to a single connected Plaid account                                                                           |
+| `--limit <n>`         | Page size (max 100)                                                                                                  |
+| `--cursor <c>`        | Pagination cursor                                                                                                    |
 
 ### insights balances
 
@@ -1337,7 +1539,9 @@ All three commands are read-only — they cannot move money.
 
 ## memory
 
-Manage the agent's local memory file at `~/.blaze/agent-memory.md`. Used by `blaze agent` to recall recurring payment patterns (e.g. "pay my rent") and recent payment history.
+Manage the agent's local memory file at `~/.blaze/agent-memory.md`. Used by
+`blaze agent` to recall recurring payment patterns (e.g. "pay my rent") and
+recent payment history.
 
 ### memory show
 
@@ -1370,7 +1574,8 @@ All commands support two output formats via the `--format` flag.
 
 ### Table (default)
 
-Human-readable formatted tables. This is the default when `--format` is not specified.
+Human-readable formatted tables. This is the default when `--format` is not
+specified.
 
 ```bash
 blaze customers list

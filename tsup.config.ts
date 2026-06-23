@@ -13,9 +13,12 @@ export default defineConfig([
     clean: true,
     outDir: "dist",
   },
-  // CLI entry
+  // CLI entry + detached background update-check worker
   {
-    entry: { "cli/index": "src/cli/index.ts" },
+    entry: {
+      "cli/index": "src/cli/index.ts",
+      "cli/update-check-worker": "src/cli/update-check-worker.ts",
+    },
     format: ["cjs"],
     dts: false,
     outDir: "dist",

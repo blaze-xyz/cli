@@ -1,16 +1,21 @@
 # Blaze CLI Production Release Checklist
 
-This document provides a comprehensive checklist for safely releasing the Blaze CLI to production/public use.
+This document provides a comprehensive checklist for safely releasing the Blaze
+CLI to production/public use.
 
 ## Overview
 
-The Blaze CLI is a command-line interface and MCP server that provides programmatic access to the Blaze platform for developers and AI agents. Before public release, we must ensure reliability, security, and excellent developer experience.
+The Blaze CLI is a command-line interface and MCP server that provides
+programmatic access to the Blaze platform for developers and AI agents. Before
+public release, we must ensure reliability, security, and excellent developer
+experience.
 
 ---
 
 ## Phase 1: Testing & Quality Assurance
 
 ### Unit Tests
+
 - [ ] **All SDK methods have unit tests**
   - [ ] Authentication flows (API key validation)
   - [ ] Request builders (query params, headers, body)
@@ -35,6 +40,7 @@ The Blaze CLI is a command-line interface and MCP server that provides programma
   - [ ] Target: >85% coverage on MCP layer
 
 ### Integration Tests
+
 - [ ] **E2E test suite created** (`test-cli-e2e.sh`)
   - [ ] Tests run against staging environment
   - [ ] All commands tested with real API calls
@@ -54,6 +60,7 @@ The Blaze CLI is a command-line interface and MCP server that provides programma
   - [ ] Integration with GitHub Actions workflow
 
 ### Manual QA
+
 - [ ] **Smoke test all commands manually**
   - [ ] Test on macOS
   - [ ] Test on Linux
@@ -79,6 +86,7 @@ The Blaze CLI is a command-line interface and MCP server that provides programma
 ## Phase 2: Security & Authentication
 
 ### API Key Management
+
 - [ ] **Secure storage implementation**
   - [ ] API keys stored in OS keychain (macOS/Linux/Windows)
   - [ ] Fallback to encrypted file if keychain unavailable
@@ -97,6 +105,7 @@ The Blaze CLI is a command-line interface and MCP server that provides programma
   - [ ] HTTPS enforced for all API calls
 
 ### Rate Limiting & Abuse Prevention
+
 - [ ] **Rate limit handling**
   - [ ] Detect 429 responses from API
   - [ ] Exponential backoff with jitter
@@ -109,6 +118,7 @@ The Blaze CLI is a command-line interface and MCP server that provides programma
   - [ ] Ability to cancel long-running commands
 
 ### Permissions & Scopes
+
 - [ ] **API key permissions documented**
   - [ ] Clear docs on what each command requires
   - [ ] Graceful handling of insufficient permissions
@@ -119,6 +129,7 @@ The Blaze CLI is a command-line interface and MCP server that provides programma
 ## Phase 3: Documentation & Developer Experience
 
 ### Installation Documentation
+
 - [ ] **README.md complete**
   - [ ] Installation instructions (npm, yarn, pnpm)
   - [ ] System requirements clearly stated
@@ -133,8 +144,13 @@ The Blaze CLI is a command-line interface and MCP server that provides programma
   - [ ] Homepage and bug tracker links
 
 ### Usage Documentation
+
+> **Canonical catalog**: `docs/cli-functionality-map.md` is the audited, single
+> source of truth for every command and tool across all four surfaces (CLI, SDK,
+> MCP server, NL agent). Reconcile usage docs against it.
+
 - [ ] **CLI documentation** (`docs/cli.md`)
-  - [ ] Every command documented with examples
+  - [x] Every command documented with examples (see cli-functionality-map.md)
   - [ ] All flags and options explained
   - [ ] Common use cases covered
   - [ ] Output format examples shown
@@ -147,11 +163,13 @@ The Blaze CLI is a command-line interface and MCP server that provides programma
 
 - [ ] **MCP documentation** (`docs/mcp.md`)
   - [ ] MCP server setup instructions
-  - [ ] Tool catalog with descriptions
+  - [x] Tool catalog with descriptions (current: 83 tools, matches
+        `registerTools()` in `src/mcp/tools.ts`)
   - [ ] Example prompts for AI agents
   - [ ] Debugging tips for MCP issues
 
 ### Help Text & Error Messages
+
 - [ ] **Command help is comprehensive**
   - [ ] `--help` on every command
   - [ ] Clear descriptions
@@ -169,6 +187,7 @@ The Blaze CLI is a command-line interface and MCP server that provides programma
 ## Phase 4: Performance & Reliability
 
 ### Performance Benchmarks
+
 - [ ] **Response time targets**
   - [ ] Simple queries (user:me) < 500ms
   - [ ] List operations < 1s for 100 items
@@ -182,6 +201,7 @@ The Blaze CLI is a command-line interface and MCP server that provides programma
   - [ ] MCP server is lightweight
 
 ### Error Recovery
+
 - [ ] **Network resilience**
   - [ ] Retry on transient failures (5xx, timeouts)
   - [ ] Clear messages on network errors
@@ -193,6 +213,7 @@ The Blaze CLI is a command-line interface and MCP server that provides programma
   - [ ] Helpful errors for invalid data
 
 ### Monitoring & Observability
+
 - [ ] **Error tracking setup**
   - [ ] Integrate with Sentry or similar
   - [ ] User opt-in for telemetry
@@ -208,6 +229,7 @@ The Blaze CLI is a command-line interface and MCP server that provides programma
 ## Phase 5: Distribution & Release
 
 ### Package Publishing
+
 - [ ] **NPM package ready**
   - [ ] Package name available (`@blaze-money/cli` or `blaze-cli`)
   - [ ] Version follows semver (start with 1.0.0)
@@ -228,6 +250,7 @@ The Blaze CLI is a command-line interface and MCP server that provides programma
   - [ ] Release notes posted to GitHub
 
 ### Version Management
+
 - [ ] **Changelog maintained**
   - [ ] Follow Keep a Changelog format
   - [ ] All breaking changes highlighted
@@ -239,6 +262,7 @@ The Blaze CLI is a command-line interface and MCP server that provides programma
   - [ ] Version support policy documented
 
 ### Distribution Channels
+
 - [ ] **NPM registry**
   - [ ] Published to public NPM
   - [ ] Package page looks good
@@ -258,6 +282,7 @@ The Blaze CLI is a command-line interface and MCP server that provides programma
 ## Phase 6: Support & Maintenance
 
 ### User Support
+
 - [ ] **Support channels established**
   - [ ] GitHub Issues for bug reports
   - [ ] Discussions for questions
@@ -270,6 +295,7 @@ The Blaze CLI is a command-line interface and MCP server that provides programma
   - [ ] Question/discussion template
 
 ### Community
+
 - [ ] **Contributing guide**
   - [ ] How to report bugs
   - [ ] How to submit PRs
@@ -282,6 +308,7 @@ The Blaze CLI is a command-line interface and MCP server that provides programma
   - [ ] Integration guides (CI/CD, automation, etc.)
 
 ### Maintenance Plan
+
 - [ ] **Update schedule**
   - [ ] Patch releases for bugs (as needed)
   - [ ] Minor releases for features (monthly?)
@@ -297,12 +324,14 @@ The Blaze CLI is a command-line interface and MCP server that provides programma
 ## Phase 7: Compliance & Legal
 
 ### Licensing
+
 - [ ] **License chosen and applied**
   - [ ] LICENSE file in repo
   - [ ] License badge in README
   - [ ] License compatible with dependencies
 
 ### Privacy & Data Protection
+
 - [ ] **Privacy policy**
   - [ ] Data collection practices disclosed
   - [ ] GDPR compliance if applicable
@@ -314,6 +343,7 @@ The Blaze CLI is a command-line interface and MCP server that provides programma
   - [ ] API abuse consequences defined
 
 ### Third-Party Compliance
+
 - [ ] **Attribution**
   - [ ] All OSS dependencies properly credited
   - [ ] NOTICE file if required
@@ -324,6 +354,7 @@ The Blaze CLI is a command-line interface and MCP server that provides programma
 ## Phase 8: Marketing & Launch
 
 ### Announcement
+
 - [ ] **Launch blog post**
   - [ ] Introduction to CLI
   - [ ] Key features highlighted
@@ -337,6 +368,7 @@ The Blaze CLI is a command-line interface and MCP server that provides programma
   - [ ] Hacker News (Show HN)
 
 ### Developer Outreach
+
 - [ ] **Integrations showcase**
   - [ ] Example GitHub Actions workflow
   - [ ] Example automation scripts
@@ -348,6 +380,7 @@ The Blaze CLI is a command-line interface and MCP server that provides programma
   - [ ] Publish to YouTube
 
 ### SEO & Discoverability
+
 - [ ] **Website page**
   - [ ] Landing page for CLI at blaze.money/cli
   - [ ] Install instructions prominent
@@ -363,6 +396,7 @@ The Blaze CLI is a command-line interface and MCP server that provides programma
 ## Pre-Launch Final Checks
 
 ### Critical Checklist (Must Pass Before Launch)
+
 - [ ] **All tests passing**
   - [ ] Unit tests: 100% pass rate
   - [ ] Integration tests: 100% pass rate
@@ -389,6 +423,7 @@ The Blaze CLI is a command-line interface and MCP server that provides programma
   - [ ] Confirm rate limits are correct
 
 ### Launch Approval
+
 - [ ] **Stakeholder sign-off**
   - [ ] Engineering lead approval
   - [ ] Product manager approval
@@ -404,12 +439,14 @@ The Blaze CLI is a command-line interface and MCP server that provides programma
 ## Post-Launch Monitoring (First 7 Days)
 
 ### Day 1
+
 - [ ] Monitor NPM downloads
 - [ ] Check GitHub issues for immediate bugs
 - [ ] Monitor error tracking (Sentry)
 - [ ] Respond to community feedback
 
 ### Week 1
+
 - [ ] Review usage analytics
 - [ ] Identify most popular commands
 - [ ] Collect feedback from early adopters
@@ -419,9 +456,9 @@ The Blaze CLI is a command-line interface and MCP server that provides programma
 
 ## Version History
 
-| Version | Date       | Changes |
-|---------|------------|---------|
-| 1.0.0   | TBD        | Initial checklist created |
+| Version | Date | Changes                   |
+| ------- | ---- | ------------------------- |
+| 1.0.0   | TBD  | Initial checklist created |
 
 ---
 
@@ -438,12 +475,17 @@ The Blaze CLI is a command-line interface and MCP server that provides programma
 
 ## Notes
 
-**Security Priority**: API key management and secure storage are critical. Do not launch without proper keychain integration.
+**Security Priority**: API key management and secure storage are critical. Do
+not launch without proper keychain integration.
 
-**Testing Priority**: E2E tests must pass 100% before launch. Integration tests catch real-world issues that unit tests miss.
+**Testing Priority**: E2E tests must pass 100% before launch. Integration tests
+catch real-world issues that unit tests miss.
 
-**Documentation Priority**: Excellent documentation drives adoption. Invest time here.
+**Documentation Priority**: Excellent documentation drives adoption. Invest time
+here.
 
-**Performance**: CLI must feel instant for common operations. Target <500ms for simple queries.
+**Performance**: CLI must feel instant for common operations. Target <500ms for
+simple queries.
 
-**Backwards Compatibility**: After 1.0.0, follow semver strictly. Breaking changes only in major versions.
+**Backwards Compatibility**: After 1.0.0, follow semver strictly. Breaking
+changes only in major versions.

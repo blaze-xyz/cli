@@ -140,8 +140,8 @@ blaze businesses use <id>        # Switch business context
 | Category | Commands |
 |----------|----------|
 | **Account** | `balance`, `whoami`, `businesses`, `me` |
-| **Payments** | `send`, `contacts`, `payments` |
-| **Business** | `customers`, `transfers`, `withdrawals`, `paylinks` |
+| **Payments** | `send`, `contacts`, `payments`, `withdrawals methods`, `withdrawals to-method`, `withdrawals status` |
+| **Business** | `customers`, `transfers`, `withdrawals create/list/get`, `paylinks` |
 | **Billing** | `invoices`, `subscriptions`, `bills` |
 | **Insights** | `insights summary`, `insights transactions`, `insights balances` |
 | **Operations** | `team`, `api-keys`, `webhooks`, `disputes` |
@@ -156,6 +156,25 @@ blaze businesses use <id>        # Switch business context
 ```
 
 See [docs/cli.md](docs/cli.md) for the full command reference.
+
+### Staying Up to Date
+
+The CLI checks npm for a newer version in the background (at most once a day) and
+shows a one-line notice when an update is available:
+
+```
+  ╭───────────────────────────────────────────╮
+  │                                             │
+  │  Update available 1.1.0 → 1.2.0             │
+  │  Run npm i -g @blaze-money/cli to update    │
+  │                                             │
+  ╰───────────────────────────────────────────╯
+```
+
+The check runs in a detached background process, so it never slows down or blocks
+your command. The notice is printed to stderr after your output, and is
+automatically suppressed for non-interactive use (piped output, `--format json`,
+and CI). To opt out entirely, set `NO_UPDATE_NOTIFIER=1`.
 
 ---
 

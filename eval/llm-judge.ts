@@ -71,7 +71,7 @@ export async function judgeAgentAnswer(args: {
       (t, i) =>
         `[${i + 1}] ${t.tool}${t.is_error ? " (ERROR)" : ""}: ${truncate(
           JSON.stringify(t.result),
-          1400
+          8000
         )}`
     )
     .join("\n")

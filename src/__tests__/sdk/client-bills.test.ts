@@ -90,13 +90,13 @@ describe("BlazeClient graphqlRequest", () => {
     expect(result).toEqual({ value: 42 })
   })
 
-  it("throws with the HTTP status when the response is not ok", async () => {
+  it("maps a 5xx response to a friendly server error", async () => {
     // Arrange
     mockGraphql(502, {}, "Bad Gateway")
 
-    // Act / Assert
+    // Act / Assert — graphqlRequest now maps HTTP status to typed errors.
     await expect(client.graphqlRequest("query {}")).rejects.toThrow(
-      "GraphQL HTTP 502: Bad Gateway"
+      "Blaze had a temporary problem"
     )
   })
 

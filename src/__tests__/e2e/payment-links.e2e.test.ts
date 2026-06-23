@@ -45,6 +45,9 @@ describeE2E("E2E: Payment Links", () => {
   it("cancels payment link", async () => {
     await ctx.client.cancelPaymentLink(linkId)
     const link = await ctx.client.getPaymentLink(linkId)
-    expect(link.status.toLowerCase()).toContain("cancel")
+    // API returns "inactive" for cancelled payment links
+    expect(["inactive", "cancelled", "canceled"]).toContain(
+      link.status.toLowerCase()
+    )
   })
 })

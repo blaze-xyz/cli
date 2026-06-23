@@ -207,13 +207,31 @@ export async function requireBusinessContext(opts: {
   process.exit(1)
 }
 
-export function handleError(err: unknown): never {
-  if (err instanceof Error) {
-    console.error(`Error: ${err.message}`)
-  } else if (typeof err === "string") {
-    console.error(`Error: ${err}`)
+export function handleError(err: unknown, format?: string): never {
+  const message =
+    err instanceof Error
+      ? err.message
+      : typeof err === "string"
+        ? err
+        : JSON.stringify(err)
+  if (format === "json") {
+    console.error(JSON.stringify({ error: message }))
   } else {
-    console.error(`Error: ${JSON.stringify(err)}`)
+    console.error(`Error: ${message}`)
+  }
+  process.exit(1)
+}
+
+/**
+ * Prints a single error and exits. In JSON mode it emits a `{ error }` object so
+ * piped/`--format json` callers get machine-readable output instead of prose.
+ * Use for guard exits in commands that already resolved `globals.format`.
+ */
+export function fail(message: string, format?: string): never {
+  if (format === "json") {
+    console.error(JSON.stringify({ error: message }))
+  } else {
+    console.error(message)
   }
   process.exit(1)
 }

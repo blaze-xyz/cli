@@ -287,7 +287,7 @@ createExternalAccount(customerId: string, data: CreateExternalAccountInput): Pro
 | `wallet_address` | `string` | No | Crypto wallet address |
 | `network` | `CryptoNetwork` | No | Crypto network |
 
-**Supported crypto networks:** `"stellar"`, `"ethereum"`, `"polygon"`, `"solana"`, `"base"`
+**Supported crypto networks:** `"stellar"`, `"ethereum"`, `"polygon"`, `"solana"`, `"base"`, `"arbitrum"`, `"optimism"`, `"avalanche"`
 
 **Example (US bank account):**
 
@@ -517,6 +517,62 @@ const withdrawal = await client.createWithdrawal({
   note: "Monthly payout",
 })
 ```
+
+> `listWithdrawals`/`getWithdrawal`/`createWithdrawal` are the **business** payout surface (REST, API-key scoped) — they pay out to a customer's external account. The methods below are the **personal cash-out** surface (GraphQL, bearer/consumer scoped) — they withdraw your own balance to your own connected method.
+
+### listConnectedPaymentMethods()
+
+List the authenticated user's connected payment methods (banks/cards) and their default withdrawal method. Consumer/bearer context only. Does **not** filter — filter on `canWithdraw === true` to find valid withdrawal destinations.
+
+```typescript
+listConnectedPaymentMethods(): Promise<ConnectedPaymentMethodsResult>
+```
+
+**Response shape:**
+
+```typescript
+interface ConnectedPaymentMethodsResult {
+  methods: ConnectedPaymentMethod[]
+  defaultWithdrawalMethodId?: string | null
+}
+```
+
+### withdrawToPaymentMethod()
+
+Withdraw your own balance to your own connected payment method. **Irreversible** — never retried.
+
+```typescript
+withdrawToPaymentMethod(input: WithdrawToPaymentMethodInput): Promise<WithdrawAccountResult>
+```
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `paymentMethodId` | `string` | Yes | Connected method ID to withdraw to |
+| `usdcAmountInCents` | `number` | Yes | USDC drawn from balance, in cents (equals `fiatAmountInCents` for USD) |
+| `fiatAmountInCents` | `number` | Yes | Amount received in `currencyCode`, in cents |
+| `currencyCode` | `string` | Yes | Destination currency (e.g. `USD`) |
+| `instantTransfer` | `boolean` | No | Force instant/standard. Defaults server-side. |
+
+**Response shape:**
+
+```typescript
+interface WithdrawAccountResult {
+  status: string // literal "PENDING" immediately
+  message?: string | null
+  jobId?: string | null
+  rampTransferId?: string | null // poll with getRampTransfer; may be null
+}
+```
+
+### getRampTransfer()
+
+Poll a withdrawal's status by its ramp transfer ID. Consumer/bearer; not super-admin.
+
+```typescript
+getRampTransfer(id: string): Promise<RampTransferStatusResult>
+```
+
+Status values: `Pending`, `PendingReview`, `Completed`, `Failed`. Amounts are exposed as `{ value, currency: { code } }` (cents + ISO code).
 
 ---
 

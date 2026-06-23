@@ -32,6 +32,7 @@ import { registerAccountingCommands } from "./commands/accounting"
 import { registerProductsCommands } from "./commands/products"
 import { registerCouponsCommands } from "./commands/coupons"
 import { registerWhoamiCommands } from "./commands/whoami"
+import { checkForUpdates } from "./update-notifier"
 
 const program = new Command()
 
@@ -84,13 +85,25 @@ registerProductsCommands(program)
 registerCouponsCommands(program)
 registerWhoamiCommands(program)
 
-try {
-  program.parse()
-} catch (err) {
-  if (err instanceof CommanderError) {
-    process.exitCode = err.exitCode
-  } else {
-    console.error(err instanceof Error ? err.message : err)
-    process.exitCode = 1
+async function main(): Promise<void> {
+  // Non-blocking: surfaces a cached "update available" notice and refreshes the
+  // cache in a detached background process. Never throws, never delays commands.
+  await checkForUpdates({
+    name: packageJson.name,
+    version: packageJson.version,
+    argv: process.argv,
+  })
+
+  try {
+    program.parse()
+  } catch (err) {
+    if (err instanceof CommanderError) {
+      process.exitCode = err.exitCode
+    } else {
+      console.error(err instanceof Error ? err.message : err)
+      process.exitCode = 1
+    }
   }
 }
+
+void main()

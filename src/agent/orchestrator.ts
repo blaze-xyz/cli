@@ -29,7 +29,7 @@ export class BlazeOrchestrator {
   }
 
   getSystemPrompt(): string {
-    return buildSystemPrompt()
+    return buildSystemPrompt(this.client.authContext)
   }
 
   getToolDefinitions(): Anthropic.Tool[] {

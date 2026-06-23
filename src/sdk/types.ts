@@ -572,6 +572,19 @@ export interface ContactCryptoAddress {
   id: string
   network: string
   address: string
+  // Destination memo (provided by the recipient/exchange). Required for Stellar
+  // recipients to receive USDC; optional/unused for other networks.
+  memo?: string | null
+  // Travel Rule beneficiary data (required by the backend for sends of $3,000+).
+  // Returned snake_cased by the REST API; all optional.
+  wallet_type?: "SelfCustodied" | "Hosted" | "External"
+  wallet_ownership_attested_at?: string | null
+  beneficiary_street_line1?: string | null
+  beneficiary_street_line2?: string | null
+  beneficiary_city?: string | null
+  beneficiary_state_province?: string | null
+  beneficiary_postal_code?: string | null
+  beneficiary_country_code?: string | null
 }
 
 export interface Contact {
@@ -595,6 +608,31 @@ export interface ListContactsParams {
   limit?: number
   type?: string
   category?: string
+}
+
+// Wallet custody classification used for Travel Rule reporting on crypto sends.
+export type ContactWalletType = "SelfCustodied" | "Hosted" | "External"
+
+/**
+ * Crypto address payload for creating a Stablecoin contact. Beneficiary fields
+ * are optional and used to satisfy the Travel Rule for sends over $3,000 —
+ * the legal name comes from the contact's first/last/business name, while the
+ * physical address + wallet type live on the crypto address.
+ */
+export interface CreateContactCryptoAddressData {
+  address: string
+  network: string
+  // Destination memo (provided by the recipient/exchange). Required for Stellar
+  // recipients to receive USDC; optional/unused for other networks.
+  memo?: string
+  walletType?: ContactWalletType
+  walletOwnershipAttestedAt?: string
+  beneficiaryStreetLine1?: string
+  beneficiaryStreetLine2?: string
+  beneficiaryCity?: string
+  beneficiaryStateProvince?: string
+  beneficiaryPostalCode?: string
+  beneficiaryCountryCode?: string
 }
 
 export interface TransferResponse {
@@ -867,6 +905,55 @@ export interface ReconciliationResult {
   totalInternalRecords: number
 }
 
+// Accounting books reconciliation (AI CFO Tool 3, Phase 3)
+export interface ReconcileAccountsParams {
+  period_start: string
+  period_end: string
+  provider?: string
+}
+
+export interface AccountingReconciliationMatch {
+  leftId: string
+  rightId: string
+  externalId?: string | null
+  confidence: number
+  matchMethod: string
+  amountDifferenceMinorUnits: number
+  dateDifferenceDays: number
+}
+
+export interface AccountingReconciliationUnmatched {
+  id: string
+  source: "blaze" | "puzzle"
+  amountMinorUnits: number
+  date: string
+  description: string
+}
+
+export interface AccountingReconciliationDiscrepancy {
+  blazeRecordId: string
+  puzzleRecordId: string
+  blazeAmountMinorUnits: number
+  puzzleAmountMinorUnits: number
+  differenceMinorUnits: number
+  details: string
+}
+
+export interface AccountingReconciliationResult {
+  provider: string
+  period: {
+    start: string
+    end: string
+  }
+  matched: AccountingReconciliationMatch[]
+  unmatchedInternal: AccountingReconciliationUnmatched[]
+  unmatchedPuzzle: AccountingReconciliationUnmatched[]
+  discrepancies: AccountingReconciliationDiscrepancy[]
+  reconciliationRate: number
+  totalInternalRecords: number
+  totalPuzzleRecords: number
+}
+
 // ============================================
 // Products
 // ============================================
@@ -978,4 +1065,127 @@ export interface ValidateCouponResult {
     final_amount: number
   }
   error?: string
+}
+
+// ============================================
+// Consumer withdrawals — withdraw your OWN balance to your OWN connected
+// payment method (linked bank / debit card). Mirrors the mobile app's
+// `withdrawAccount` GraphQL flow. Distinct from the business `Withdrawal`
+// (REST `/v1/withdrawals`), which pays out to a customer's external account.
+// ============================================
+
+// A payment method the authenticated user has connected (bank or debit card),
+// as returned by `me { paymentMethods { … } }`. Used to pick a withdrawal
+// destination. Only `canWithdraw === true` methods are valid destinations.
+export interface ConnectedPaymentMethod {
+  id: string
+  type: string // UserPaymentMethodType: Bank | Card | Cash | Other | PayPal | Venmo | VirtualAccount | Zelle
+  displayName?: string | null
+  nickname?: string | null
+  maskedAccountNumber?: string | null
+  canDeposit: boolean
+  canWithdraw: boolean
+  withdrawIneligibilityReason?: string | null
+  disbursementEligible?: boolean | null
+  isDefault: boolean
+  rampVerificationStatus: string
+  provider?: { id: string; name?: string | null } | null
+  card?: { id: string; lastFour: string; brand: string } | null
+  binData?: { isPrepaid?: boolean | null; type?: string | null } | null
+}
+
+export interface ConnectedPaymentMethodsResult {
+  methods: ConnectedPaymentMethod[]
+  defaultWithdrawalMethodId?: string | null
+  // The user's default residence country code (ISO-3166 alpha-2, e.g. "MX"),
+  // used to price the withdrawal fee accurately via `applicableFee`. Null when
+  // the user has no default residence set.
+  countryCode?: string | null
+}
+
+// The pre-submit fee quote returned by the @Public `applicableFee` query — the
+// SAME calculation the mobile app's `useFeeDisplay` shows. `totalFeeCents` is
+// the exact fee (USD cents) we surface before confirming a withdrawal.
+export interface ApplicableFee {
+  totalFeeCents: number
+  flatFeeCents: number
+  percentageFeeCents: number
+  percentageRate: number
+  minFeeCents: number
+  displayName: string
+  configId: string
+}
+
+// Result of the live `checkLimits` query, used to pre-check a withdrawal
+// against the server's authoritative minimum and per-user limit BEFORE
+// submitting. `minimumAmountCents` is the USD-equivalent floor (currently
+// $5.00); `limitUsdCents`/`remainingUsdCents` describe the user's rolling
+// limit when one applies.
+export interface WithdrawalLimits {
+  meetsMinimum: boolean
+  minimumAmountCents: number // USD cents
+  isUnderLimit: boolean
+  limitUsdCents?: number | null
+  remainingUsdCents?: number | null
+}
+
+// One fee row written to a RampTransfer at submit time. The exact fee charged
+// for a withdrawal is the sum of these `amountCents` (USD cents).
+export interface RampFeeCollection {
+  amountCents: number
+  displayName?: string | null
+  collectionMethod?: string | null
+  feeType?: string | null
+}
+
+// Input to `withdrawToPaymentMethod`. Amounts are in cents (minor units).
+// `usdcAmountInCents` is the amount drawn from the user's USDC balance;
+// `fiatAmountInCents` is what they receive in `currencyCode`. For USD these
+// are equal; for non-USD `usdcAmountInCents` is the FX-converted USD value.
+export interface WithdrawToPaymentMethodInput {
+  paymentMethodId: string
+  usdcAmountInCents: number
+  fiatAmountInCents: number
+  currencyCode: string
+  instantTransfer?: boolean
+}
+
+// Immediate response from `withdrawAccount`. `status` is the literal string
+// "PENDING" (not the RampTransferStatus enum); `jobId` is hardcoded null by
+// the backend; `rampTransferId` is the id to poll for status (may be null).
+export interface WithdrawAccountResult {
+  status: string
+  message?: string | null
+  jobId?: string | null
+  rampTransferId?: string | null
+}
+
+// A single fiat/usdc leg of a ramp transfer, mapped from the GraphQL `Amount`
+// type. The `Amount` type exposes `value` (cents) and `currency { code }` —
+// it does NOT have `amount`/`currencyCode` fields.
+export interface RampTransferAmount {
+  value: number
+  currency?: { code: string } | null
+}
+
+// Status of a withdrawal (RampTransfer), polled via `getRampTransfer`.
+// `status` is the user-facing RampTransferStatus: Pending | PendingReview |
+// Completed | Failed (there is no Processing state).
+export interface RampTransferStatusResult {
+  id: string
+  type: string // TransferType: Deposit | Withdrawal
+  status: string
+  isInstant?: boolean
+  createdAt?: string
+  expectedAt?: string
+  fiatAmount?: RampTransferAmount | null
+  usdcAmount?: RampTransferAmount | null
+  paymentMethod?: {
+    id: string
+    displayName?: string | null
+    type?: string
+  } | null
+  // Fee rows written synchronously at submit time. Sum their `amountCents` for
+  // the exact withdrawal fee (USD cents). Null/absent until selected.
+  feeCollections?: RampFeeCollection[] | null
 }

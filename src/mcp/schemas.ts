@@ -173,6 +173,52 @@ export const createWithdrawalSchema = z.object({
     .describe("Arbitrary key-value metadata"),
 })
 
+// Consumer withdrawals — withdraw your OWN balance to your OWN connected
+// payment method (bank/card). Requires a personal/bearer session.
+export const listConnectedPaymentMethodsSchema = z.object({
+  all: z
+    .boolean()
+    .optional()
+    .describe(
+      "Include methods you can't withdraw to (default: only withdrawal-eligible)"
+    ),
+})
+
+export const withdrawToPaymentMethodSchema = z.object({
+  payment_method_id: z
+    .string()
+    .describe("Your connected payment method ID to withdraw to"),
+  amount: z.number().positive().describe("Amount to withdraw (major units)"),
+  currency: z
+    .string()
+    .optional()
+    .describe("Currency code (e.g. USD, MXN). Defaults to USD"),
+  instant_transfer: z
+    .boolean()
+    .optional()
+    .describe(
+      "Force instant (true) or standard (false). Defaults to instant for cards, standard for banks."
+    ),
+  confirm: z
+    .literal(true)
+    .describe(
+      "Must be literally true. Irreversible withdrawal; only call after the user explicitly approved the amount AND destination."
+    ),
+})
+
+// Read-only fee preview — quote the exact withdrawal fee BEFORE the irreversible
+// withdraw, so the model can tell the user the fee and total debited.
+export const estimateWithdrawalFeeSchema = z.object({
+  payment_method_id: z
+    .string()
+    .describe("Your connected payment method ID to estimate the fee for"),
+  amount: z.number().positive().describe("Amount to withdraw (major units)"),
+  currency: z
+    .string()
+    .optional()
+    .describe("Currency code (e.g. USD, MXN). Defaults to USD"),
+})
+
 // Payment Links
 export const listPaymentLinksSchema = z.object({
   limit: z

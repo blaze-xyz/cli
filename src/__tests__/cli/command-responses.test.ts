@@ -19,6 +19,13 @@ jest.mock("../../cli/utils", () => ({
   handleError: jest.fn(err => {
     throw err
   }),
+  // `fail` prints + process.exit(1); the withdraw command uses it for guard
+  // exits. Mirror the real behavior (console.error then exit) so the existing
+  // exit-spy assertions keep working.
+  fail: jest.fn((message: string) => {
+    console.error(message)
+    process.exit(1)
+  }),
   requireBusinessContext: jest.fn().mockResolvedValue("biz_123"),
   withSpinner: jest.fn((_text: string, fn: () => Promise<unknown>) => fn()),
 }))
@@ -34,6 +41,16 @@ jest.mock("../../cli/output", () => ({
 }))
 
 jest.mock("../../constants/fx-rates", () => ({
+  // USD_RATES is consumed at module-load by withdrawal-format.ts to build the
+  // supported-currency list, so the mock must provide it.
+  USD_RATES: {
+    MXN: 17.15,
+    BRL: 5.05,
+    EUR: 0.92,
+    GBP: 0.79,
+    COP: 4200,
+    ARS: 900,
+  },
   estimateUsdAmount: jest.fn((amount: number) => amount * 0.05),
 }))
 
@@ -84,6 +101,9 @@ function createMockClient(overrides: Record<string, unknown> = {}) {
     payContact: jest
       .fn()
       .mockResolvedValue({ id: "tr_123", status: "processing" }),
+    payContactCrypto: jest
+      .fn()
+      .mockResolvedValue({ id: "tr_crypto_1", status: "processing" }),
     createContact: jest.fn().mockResolvedValue({ id: "con_456" }),
     deleteContact: jest.fn().mockResolvedValue(undefined),
     listTransfers: jest.fn().mockResolvedValue({ data: [] }),
@@ -180,6 +200,30 @@ function createMockClient(overrides: Record<string, unknown> = {}) {
     closeDispute: jest
       .fn()
       .mockResolvedValue({ id: "dis_1", status: "closed" }),
+    // Consumer withdrawal limit/receipt surface — default to a passing
+    // limit check and a fee-less transfer so the to-method happy path runs
+    // clean unless a test overrides these.
+    checkWithdrawalLimits: jest.fn().mockResolvedValue({
+      meetsMinimum: true,
+      isUnderLimit: true,
+      minimumAmountCents: 500,
+    }),
+    getRampTransfer: jest.fn().mockResolvedValue({
+      id: "rt_1",
+      status: "Pending",
+      feeCollections: [],
+    }),
+    // Fee preview surface — default to a $2.00 fee so the to-method receipt and
+    // confirm prompt have an accurate fee unless a test overrides it.
+    getApplicableWithdrawalFee: jest.fn().mockResolvedValue({
+      totalFeeCents: 200,
+      displayName: "Card Withdrawal Fee",
+      flatFeeCents: 0,
+      percentageFeeCents: 0,
+      percentageRate: 0.02,
+      minFeeCents: 200,
+      configId: "c",
+    }),
     graphqlRequest: jest.fn().mockResolvedValue({}),
     ...overrides,
   } as unknown as ReturnType<typeof getClient> extends Promise<infer T>
@@ -409,9 +453,437 @@ describe("CLI Command Responses", () => {
     })
   })
 
-  describe("contacts add", () => {
+  describe("contacts pay (crypto routing)", () => {
+    // A Stablecoin contact with a single crypto address and no bank account.
+    const stablecoinContact = {
+      id: "con_crypto",
+      type: "Stablecoin",
+      first_name: "Ada",
+      last_name: "Lovelace",
+      business_name: null,
+      bank_accounts: [],
+      crypto_addresses: [
+        {
+          id: "addr_1",
+          network: "Ethereum",
+          address: "0xAbC1234567890dEf1234567890aBcDeF12345678",
+        },
+      ],
+    }
+    let payCrypto: jest.Mock
+    let payBank: jest.Mock
+    let exitSpy: jest.SpyInstance
+
     beforeEach(() => {
       registerContactsCommands(program)
+      payCrypto = jest
+        .fn()
+        .mockResolvedValue({ id: "tr_crypto_1", status: "processing" })
+      payBank = jest
+        .fn()
+        .mockResolvedValue({ id: "tr_123", status: "processing" })
+      // process.exit would kill the test runner — make it throw so the test
+      // can assert the early-exit path without terminating the process.
+      exitSpy = jest.spyOn(process, "exit").mockImplementation((() => {
+        throw new Error("process.exit called")
+      }) as never)
+    })
+
+    afterEach(() => {
+      exitSpy.mockRestore()
+    })
+
+    it("routes a Stablecoin contact to payContactCrypto and never calls payContact", async () => {
+      mockGetClient.mockResolvedValue(
+        createMockClient({
+          listContacts: jest
+            .fn()
+            .mockResolvedValue({ data: [stablecoinContact] }),
+          getBalance: jest
+            .fn()
+            .mockResolvedValue({ available: 100000, pending: 0 }),
+          payContactCrypto: payCrypto,
+          payContact: payBank,
+        })
+      )
+
+      await program.parseAsync([
+        "node",
+        "blaze",
+        "contacts",
+        "pay",
+        "Ada",
+        "--amount",
+        "25",
+        "--yes",
+      ])
+
+      expect(payCrypto).toHaveBeenCalledWith("con_crypto", "addr_1", {
+        usdcAmountInCents: 2500,
+        amount: 25,
+        note: undefined,
+      })
+      expect(payBank).not.toHaveBeenCalled()
+      expect(getOutput()).toContain(
+        "Your crypto send of 25 USDC to Ada Lovelace"
+      )
+      // Names the network in plain English and sets the ~30-min settlement expectation.
+      expect(getOutput()).toContain("Ethereum")
+      expect(getOutput()).toContain("30 minutes")
+      expect(getOutput()).toContain("irreversible")
+    })
+
+    it("confirm-gates a crypto send with an irreversibility warning and cancels when declined", async () => {
+      const { confirm } = jest.requireMock("@inquirer/prompts") as {
+        confirm: jest.Mock
+      }
+      confirm.mockResolvedValueOnce(false)
+      mockGetClient.mockResolvedValue(
+        createMockClient({
+          listContacts: jest
+            .fn()
+            .mockResolvedValue({ data: [stablecoinContact] }),
+          getBalance: jest
+            .fn()
+            .mockResolvedValue({ available: 100000, pending: 0 }),
+          payContactCrypto: payCrypto,
+        })
+      )
+
+      // No --yes flag, so the confirmation prompt is reached.
+      await program.parseAsync([
+        "node",
+        "blaze",
+        "contacts",
+        "pay",
+        "Ada",
+        "--amount",
+        "25",
+      ])
+
+      expect(confirm).toHaveBeenCalledWith(
+        expect.objectContaining({
+          message: expect.stringContaining("irreversible"),
+        })
+      )
+      expect(payCrypto).not.toHaveBeenCalled()
+      expect(getOutput()).toContain("Cancelled.")
+    })
+
+    it("rejects a crypto send below the $1 USDC minimum before calling payContactCrypto", async () => {
+      mockGetClient.mockResolvedValue(
+        createMockClient({
+          listContacts: jest
+            .fn()
+            .mockResolvedValue({ data: [stablecoinContact] }),
+          payContactCrypto: payCrypto,
+        })
+      )
+
+      await expect(
+        program.parseAsync([
+          "node",
+          "blaze",
+          "contacts",
+          "pay",
+          "Ada",
+          "--amount",
+          "0.5",
+          "--yes",
+        ])
+      ).rejects.toThrow()
+
+      expect(payCrypto).not.toHaveBeenCalled()
+      expect(exitSpy).toHaveBeenCalledWith(1)
+    })
+
+    it("rejects a $5,000 crypto send ($3,000 or more) when beneficiary data is missing", async () => {
+      mockGetClient.mockResolvedValue(
+        createMockClient({
+          listContacts: jest
+            .fn()
+            .mockResolvedValue({ data: [stablecoinContact] }),
+          getBalance: jest
+            .fn()
+            .mockResolvedValue({ available: 10000000, pending: 0 }),
+          payContactCrypto: payCrypto,
+        })
+      )
+
+      await expect(
+        program.parseAsync([
+          "node",
+          "blaze",
+          "contacts",
+          "pay",
+          "Ada",
+          "--amount",
+          "5000",
+          "--yes",
+        ])
+      ).rejects.toThrow()
+
+      expect(payCrypto).not.toHaveBeenCalled()
+      expect(exitSpy).toHaveBeenCalledWith(1)
+    })
+
+    it("rejects a crypto send of exactly $3,000 (at the threshold) when beneficiary data is missing", async () => {
+      mockGetClient.mockResolvedValue(
+        createMockClient({
+          listContacts: jest
+            .fn()
+            .mockResolvedValue({ data: [stablecoinContact] }),
+          getBalance: jest
+            .fn()
+            .mockResolvedValue({ available: 10000000, pending: 0 }),
+          payContactCrypto: payCrypto,
+        })
+      )
+
+      await expect(
+        program.parseAsync([
+          "node",
+          "blaze",
+          "contacts",
+          "pay",
+          "Ada",
+          "--amount",
+          "3000",
+          "--yes",
+        ])
+      ).rejects.toThrow()
+
+      expect(payCrypto).not.toHaveBeenCalled()
+      expect(exitSpy).toHaveBeenCalledWith(1)
+    })
+
+    it("allows a crypto send just below $3,000 without beneficiary data", async () => {
+      mockGetClient.mockResolvedValue(
+        createMockClient({
+          listContacts: jest
+            .fn()
+            .mockResolvedValue({ data: [stablecoinContact] }),
+          getBalance: jest
+            .fn()
+            .mockResolvedValue({ available: 10000000, pending: 0 }),
+          payContactCrypto: payCrypto,
+        })
+      )
+
+      await program.parseAsync([
+        "node",
+        "blaze",
+        "contacts",
+        "pay",
+        "Ada",
+        "--amount",
+        "2999",
+        "--yes",
+      ])
+
+      expect(payCrypto).toHaveBeenCalledWith("con_crypto", "addr_1", {
+        usdcAmountInCents: 299900,
+        amount: 2999,
+        note: undefined,
+      })
+    })
+
+    it("allows a $5,000 crypto send ($3,000 or more) when the address has beneficiary data", async () => {
+      const compliantContact = {
+        ...stablecoinContact,
+        crypto_addresses: [
+          {
+            ...stablecoinContact.crypto_addresses[0],
+            wallet_type: "SelfCustodied",
+            beneficiary_street_line1: "1 Engine Way",
+            beneficiary_city: "London",
+            beneficiary_postal_code: "EC1A",
+            beneficiary_country_code: "GB",
+          },
+        ],
+      }
+      mockGetClient.mockResolvedValue(
+        createMockClient({
+          listContacts: jest
+            .fn()
+            .mockResolvedValue({ data: [compliantContact] }),
+          getBalance: jest
+            .fn()
+            .mockResolvedValue({ available: 10000000, pending: 0 }),
+          payContactCrypto: payCrypto,
+        })
+      )
+
+      await program.parseAsync([
+        "node",
+        "blaze",
+        "contacts",
+        "pay",
+        "Ada",
+        "--amount",
+        "5000",
+        "--yes",
+      ])
+
+      expect(payCrypto).toHaveBeenCalledWith("con_crypto", "addr_1", {
+        usdcAmountInCents: 500000,
+        amount: 5000,
+        note: undefined,
+      })
+    })
+
+    it("rejects a $5,000 crypto send to a hosted wallet when the ownership attestation is missing", async () => {
+      // A hosted/custodial address with full base beneficiary data but NO
+      // ownership attestation — Bridge requires it, so the CLI must block.
+      const hostedNoAttestation = {
+        ...stablecoinContact,
+        crypto_addresses: [
+          {
+            ...stablecoinContact.crypto_addresses[0],
+            wallet_type: "Hosted",
+            beneficiary_street_line1: "1 Engine Way",
+            beneficiary_city: "London",
+            beneficiary_postal_code: "EC1A",
+            beneficiary_country_code: "GB",
+            wallet_ownership_attested_at: null,
+          },
+        ],
+      }
+      mockGetClient.mockResolvedValue(
+        createMockClient({
+          listContacts: jest
+            .fn()
+            .mockResolvedValue({ data: [hostedNoAttestation] }),
+          getBalance: jest
+            .fn()
+            .mockResolvedValue({ available: 10000000, pending: 0 }),
+          payContactCrypto: payCrypto,
+        })
+      )
+
+      await expect(
+        program.parseAsync([
+          "node",
+          "blaze",
+          "contacts",
+          "pay",
+          "Ada",
+          "--amount",
+          "5000",
+          "--yes",
+        ])
+      ).rejects.toThrow()
+
+      expect(payCrypto).not.toHaveBeenCalled()
+      expect(exitSpy).toHaveBeenCalledWith(1)
+    })
+
+    it("allows a $5,000 crypto send to a hosted wallet when the ownership attestation is present", async () => {
+      const hostedAttested = {
+        ...stablecoinContact,
+        crypto_addresses: [
+          {
+            ...stablecoinContact.crypto_addresses[0],
+            wallet_type: "Hosted",
+            beneficiary_street_line1: "1 Engine Way",
+            beneficiary_city: "London",
+            beneficiary_postal_code: "EC1A",
+            beneficiary_country_code: "GB",
+            wallet_ownership_attested_at: "2026-06-17T12:00:00.000Z",
+          },
+        ],
+      }
+      mockGetClient.mockResolvedValue(
+        createMockClient({
+          listContacts: jest.fn().mockResolvedValue({ data: [hostedAttested] }),
+          getBalance: jest
+            .fn()
+            .mockResolvedValue({ available: 10000000, pending: 0 }),
+          payContactCrypto: payCrypto,
+        })
+      )
+
+      await program.parseAsync([
+        "node",
+        "blaze",
+        "contacts",
+        "pay",
+        "Ada",
+        "--amount",
+        "5000",
+        "--yes",
+      ])
+
+      expect(payCrypto).toHaveBeenCalledWith("con_crypto", "addr_1", {
+        usdcAmountInCents: 500000,
+        amount: 5000,
+        note: undefined,
+      })
+    })
+  })
+
+  describe("contacts pay (bank-only error)", () => {
+    let exitSpy: jest.SpyInstance
+
+    beforeEach(() => {
+      registerContactsCommands(program)
+      exitSpy = jest.spyOn(process, "exit").mockImplementation((() => {
+        throw new Error("process.exit called")
+      }) as never)
+    })
+
+    afterEach(() => {
+      exitSpy.mockRestore()
+    })
+
+    it("throws the no-bank-accounts error only for a genuine Bank contact", async () => {
+      const bankContactNoAccounts = {
+        id: "con_bank",
+        type: "Bank",
+        first_name: "Bob",
+        last_name: "Bank",
+        business_name: null,
+        bank_accounts: [],
+        crypto_addresses: [],
+      }
+      const errorSpy = jest.spyOn(console, "error").mockImplementation(() => {})
+      mockGetClient.mockResolvedValue(
+        createMockClient({
+          listContacts: jest
+            .fn()
+            .mockResolvedValue({ data: [bankContactNoAccounts] }),
+        })
+      )
+
+      await expect(
+        program.parseAsync([
+          "node",
+          "blaze",
+          "contacts",
+          "pay",
+          "Bob",
+          "--amount",
+          "100",
+          "--yes",
+        ])
+      ).rejects.toThrow("has no bank accounts")
+
+      errorSpy.mockRestore()
+    })
+  })
+
+  describe("contacts add", () => {
+    let exitSpy: jest.SpyInstance
+
+    beforeEach(() => {
+      registerContactsCommands(program)
+      exitSpy = jest.spyOn(process, "exit").mockImplementation((() => {
+        throw new Error("process.exit called")
+      }) as never)
+    })
+
+    afterEach(() => {
+      exitSpy.mockRestore()
     })
 
     it("outputs natural sentence with contact name", async () => {
@@ -433,6 +905,383 @@ describe("CLI Command Responses", () => {
       expect(output).toContain("Jane Smith has been added to your contacts")
       expect(output).not.toContain("ID:")
       expect(output).not.toContain("con_456")
+    })
+
+    it("maps a validated --network value to the PascalCase enum on the crypto address", async () => {
+      const createContact = jest.fn().mockResolvedValue({ id: "con_456" })
+      mockGetClient.mockResolvedValue(createMockClient({ createContact }))
+
+      await program.parseAsync([
+        "node",
+        "blaze",
+        "contacts",
+        "add",
+        "--first-name",
+        "Ada",
+        "--last-name",
+        "Lovelace",
+        "--phone",
+        "+12025551234",
+        "--type",
+        "crypto",
+        "--wallet-address",
+        "0xAbC1234567890dEf1234567890aBcDeF12345678",
+        "--network",
+        "polygon",
+      ])
+
+      expect(createContact).toHaveBeenCalledWith(
+        expect.objectContaining({
+          type: "Stablecoin",
+          cryptoAddressData: expect.objectContaining({
+            address: "0xAbC1234567890dEf1234567890aBcDeF12345678",
+            network: "Polygon",
+          }),
+        })
+      )
+    })
+
+    it("includes the --memo value on the crypto address payload for a Stellar contact", async () => {
+      const createContact = jest.fn().mockResolvedValue({ id: "con_456" })
+      mockGetClient.mockResolvedValue(createMockClient({ createContact }))
+
+      await program.parseAsync([
+        "node",
+        "blaze",
+        "contacts",
+        "add",
+        "--first-name",
+        "Ada",
+        "--last-name",
+        "Lovelace",
+        "--phone",
+        "+12025551234",
+        "--type",
+        "crypto",
+        "--wallet-address",
+        "GXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX",
+        "--network",
+        "stellar",
+        "--memo",
+        "exchange-memo-42",
+      ])
+
+      expect(createContact).toHaveBeenCalledWith(
+        expect.objectContaining({
+          type: "Stablecoin",
+          cryptoAddressData: expect.objectContaining({
+            address: "GXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX",
+            network: "Stellar",
+            memo: "exchange-memo-42",
+          }),
+        })
+      )
+    })
+
+    it("omits memo from the crypto address payload when --memo is not provided", async () => {
+      const createContact = jest.fn().mockResolvedValue({ id: "con_456" })
+      mockGetClient.mockResolvedValue(createMockClient({ createContact }))
+
+      await program.parseAsync([
+        "node",
+        "blaze",
+        "contacts",
+        "add",
+        "--first-name",
+        "Ada",
+        "--last-name",
+        "Lovelace",
+        "--phone",
+        "+12025551234",
+        "--type",
+        "crypto",
+        "--wallet-address",
+        "0xAbC1234567890dEf1234567890aBcDeF12345678",
+        "--network",
+        "polygon",
+      ])
+
+      const payload = createContact.mock.calls[0][0] as {
+        cryptoAddressData: Record<string, unknown>
+      }
+      expect(payload.cryptoAddressData).not.toHaveProperty("memo")
+    })
+
+    it("stamps walletOwnershipAttestedAt with the current ISO timestamp when --attest-ownership is set on a hosted wallet", async () => {
+      const createContact = jest.fn().mockResolvedValue({ id: "con_456" })
+      mockGetClient.mockResolvedValue(createMockClient({ createContact }))
+
+      const before = Date.now()
+      await program.parseAsync([
+        "node",
+        "blaze",
+        "contacts",
+        "add",
+        "--first-name",
+        "Ada",
+        "--last-name",
+        "Lovelace",
+        "--phone",
+        "+12025551234",
+        "--type",
+        "crypto",
+        "--wallet-address",
+        "0xAbC1234567890dEf1234567890aBcDeF12345678",
+        "--network",
+        "ethereum",
+        "--wallet-type",
+        "hosted",
+        "--attest-ownership",
+      ])
+      const after = Date.now()
+
+      const payload = createContact.mock.calls[0][0] as {
+        cryptoAddressData: {
+          walletType: string
+          walletOwnershipAttestedAt: string
+        }
+      }
+      expect(payload.cryptoAddressData.walletType).toBe("Hosted")
+      const attestedMs = new Date(
+        payload.cryptoAddressData.walletOwnershipAttestedAt
+      ).getTime()
+      expect(attestedMs).toBeGreaterThanOrEqual(before)
+      expect(attestedMs).toBeLessThanOrEqual(after)
+    })
+
+    it("uses the explicit --wallet-attested-at value over --attest-ownership's now", async () => {
+      const createContact = jest.fn().mockResolvedValue({ id: "con_456" })
+      mockGetClient.mockResolvedValue(createMockClient({ createContact }))
+
+      await program.parseAsync([
+        "node",
+        "blaze",
+        "contacts",
+        "add",
+        "--first-name",
+        "Ada",
+        "--last-name",
+        "Lovelace",
+        "--phone",
+        "+12025551234",
+        "--type",
+        "crypto",
+        "--wallet-address",
+        "0xAbC1234567890dEf1234567890aBcDeF12345678",
+        "--network",
+        "ethereum",
+        "--wallet-type",
+        "hosted",
+        "--attest-ownership",
+        "--wallet-attested-at",
+        "2026-06-17T00:00:00Z",
+      ])
+
+      expect(createContact).toHaveBeenCalledWith(
+        expect.objectContaining({
+          cryptoAddressData: expect.objectContaining({
+            walletType: "Hosted",
+            walletOwnershipAttestedAt: "2026-06-17T00:00:00.000Z",
+          }),
+        })
+      )
+    })
+
+    it("rejects an invalid --wallet-attested-at value without calling createContact", async () => {
+      const createContact = jest.fn().mockResolvedValue({ id: "con_456" })
+      mockGetClient.mockResolvedValue(createMockClient({ createContact }))
+
+      await expect(
+        program.parseAsync([
+          "node",
+          "blaze",
+          "contacts",
+          "add",
+          "--first-name",
+          "Ada",
+          "--last-name",
+          "Lovelace",
+          "--phone",
+          "+12025551234",
+          "--type",
+          "crypto",
+          "--wallet-address",
+          "0xAbC1234567890dEf1234567890aBcDeF12345678",
+          "--network",
+          "ethereum",
+          "--wallet-type",
+          "hosted",
+          "--wallet-attested-at",
+          "not-a-date",
+        ])
+      ).rejects.toThrow()
+
+      expect(createContact).not.toHaveBeenCalled()
+      expect(exitSpy).toHaveBeenCalledWith(1)
+    })
+
+    it("rejects a Stellar crypto contact without --memo before calling createContact", async () => {
+      const createContact = jest.fn().mockResolvedValue({ id: "con_456" })
+      mockGetClient.mockResolvedValue(createMockClient({ createContact }))
+
+      await expect(
+        program.parseAsync([
+          "node",
+          "blaze",
+          "contacts",
+          "add",
+          "--first-name",
+          "Ada",
+          "--last-name",
+          "Lovelace",
+          "--phone",
+          "+12025551234",
+          "--type",
+          "crypto",
+          "--wallet-address",
+          "GXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX",
+          "--network",
+          "stellar",
+        ])
+      ).rejects.toThrow()
+
+      expect(createContact).not.toHaveBeenCalled()
+      expect(exitSpy).toHaveBeenCalledWith(1)
+    })
+
+    it("rejects a Stellar crypto contact when --network is omitted (defaults to stellar) and --memo is missing", async () => {
+      const createContact = jest.fn().mockResolvedValue({ id: "con_456" })
+      mockGetClient.mockResolvedValue(createMockClient({ createContact }))
+
+      await expect(
+        program.parseAsync([
+          "node",
+          "blaze",
+          "contacts",
+          "add",
+          "--first-name",
+          "Ada",
+          "--last-name",
+          "Lovelace",
+          "--phone",
+          "+12025551234",
+          "--type",
+          "crypto",
+          "--wallet-address",
+          "GXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX",
+        ])
+      ).rejects.toThrow()
+
+      expect(createContact).not.toHaveBeenCalled()
+      expect(exitSpy).toHaveBeenCalledWith(1)
+    })
+
+    it("allows a Stellar crypto contact when --memo is provided", async () => {
+      const createContact = jest.fn().mockResolvedValue({ id: "con_456" })
+      mockGetClient.mockResolvedValue(createMockClient({ createContact }))
+
+      await program.parseAsync([
+        "node",
+        "blaze",
+        "contacts",
+        "add",
+        "--first-name",
+        "Ada",
+        "--last-name",
+        "Lovelace",
+        "--phone",
+        "+12025551234",
+        "--type",
+        "crypto",
+        "--wallet-address",
+        "GXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX",
+        "--network",
+        "stellar",
+        "--memo",
+        "exchange-memo-42",
+      ])
+
+      expect(createContact).toHaveBeenCalledWith(
+        expect.objectContaining({
+          type: "Stablecoin",
+          cryptoAddressData: expect.objectContaining({
+            network: "Stellar",
+            memo: "exchange-memo-42",
+          }),
+        })
+      )
+      expect(exitSpy).not.toHaveBeenCalled()
+    })
+
+    it("rejects an unknown --network value without silently defaulting to Stellar", async () => {
+      const createContact = jest.fn().mockResolvedValue({ id: "con_456" })
+      mockGetClient.mockResolvedValue(createMockClient({ createContact }))
+
+      await expect(
+        program.parseAsync([
+          "node",
+          "blaze",
+          "contacts",
+          "add",
+          "--first-name",
+          "Ada",
+          "--last-name",
+          "Lovelace",
+          "--phone",
+          "+12025551234",
+          "--type",
+          "crypto",
+          "--wallet-address",
+          "0xAbC1234567890dEf1234567890aBcDeF12345678",
+          "--network",
+          "dogecoin",
+        ])
+      ).rejects.toThrow()
+
+      expect(createContact).not.toHaveBeenCalled()
+      expect(exitSpy).toHaveBeenCalledWith(1)
+    })
+  })
+
+  describe("contacts list", () => {
+    beforeEach(() => {
+      registerContactsCommands(program)
+    })
+
+    it("renders a crypto address with network and shortened address in the account column", async () => {
+      mockGetClient.mockResolvedValue(
+        createMockClient({
+          listContacts: jest.fn().mockResolvedValue({
+            data: [
+              {
+                id: "con_crypto",
+                type: "Stablecoin",
+                first_name: "Ada",
+                last_name: "Lovelace",
+                business_name: null,
+                email: null,
+                is_favorite: false,
+                created_at: "2026-01-15T10:00:00Z",
+                bank_accounts: [],
+                crypto_addresses: [
+                  {
+                    id: "addr_1",
+                    network: "Ethereum",
+                    address: "0xAbC1234567890dEf1234567890aBcDeF12345678",
+                  },
+                ],
+              },
+            ],
+          }),
+        })
+      )
+
+      await program.parseAsync(["node", "blaze", "contacts", "list"])
+
+      const formatted = mockFormatOutput.mock.calls[0][0] as Array<{
+        account: string
+      }>
+      expect(formatted[0].account).toBe("Ethereum (0xAbC1…5678)")
     })
   })
 
@@ -579,6 +1428,361 @@ describe("CLI Command Responses", () => {
       ])
       const output = getOutput()
       expect(output).toContain('with the note "Savings"')
+    })
+  })
+
+  describe("withdrawals methods (consumer)", () => {
+    beforeEach(() => {
+      registerWithdrawalsCommands(program)
+    })
+
+    it("shows only withdrawal-eligible methods by default", async () => {
+      mockGetClient.mockResolvedValue(
+        createMockClient({
+          authContext: "consumer",
+          listConnectedPaymentMethods: jest.fn().mockResolvedValue({
+            methods: [
+              {
+                id: "pm_1",
+                type: "Bank",
+                displayName: "Chase",
+                canWithdraw: true,
+              },
+              {
+                id: "pm_2",
+                type: "Card",
+                displayName: "Old Card",
+                canWithdraw: false,
+              },
+            ],
+            defaultWithdrawalMethodId: "pm_1",
+          }),
+        })
+      )
+
+      await program.parseAsync(["node", "blaze", "withdrawals", "methods"])
+
+      const rows = mockFormatOutput.mock.calls[0][0] as { id: string }[]
+      expect(rows).toHaveLength(1)
+      expect(rows[0].id).toBe("pm_1")
+    })
+
+    it("blocks listing in business context with a personal-login error", async () => {
+      const exitSpy = jest.spyOn(process, "exit").mockImplementation((() => {
+        throw new Error("process.exit called")
+      }) as never)
+      const errorSpy = jest.spyOn(console, "error").mockImplementation(() => {})
+      mockGetClient.mockResolvedValue(
+        createMockClient({ authContext: "business" })
+      )
+
+      await expect(
+        program.parseAsync(["node", "blaze", "withdrawals", "methods"])
+      ).rejects.toThrow("process.exit called")
+
+      expect(errorSpy).toHaveBeenCalledWith(
+        expect.stringContaining("requires a personal login")
+      )
+      exitSpy.mockRestore()
+      errorSpy.mockRestore()
+    })
+  })
+
+  describe("withdrawals to-method (consumer)", () => {
+    beforeEach(() => {
+      registerWithdrawalsCommands(program)
+    })
+
+    it("submits the withdrawal to the only eligible method and prints a friendly receipt with the real fee", async () => {
+      const withdrawToPaymentMethod = jest
+        .fn()
+        .mockResolvedValue({ status: "PENDING", rampTransferId: "rt_1" })
+      mockGetClient.mockResolvedValue(
+        createMockClient({
+          authContext: "consumer",
+          getBalance: jest
+            .fn()
+            .mockResolvedValue({ available: 100000, pending: 0 }),
+          checkWithdrawalLimits: jest.fn().mockResolvedValue({
+            meetsMinimum: true,
+            isUnderLimit: true,
+            minimumAmountCents: 500,
+          }),
+          listConnectedPaymentMethods: jest.fn().mockResolvedValue({
+            methods: [
+              {
+                id: "pm_1",
+                type: "Bank",
+                displayName: "Chase",
+                canWithdraw: true,
+              },
+            ],
+            defaultWithdrawalMethodId: "pm_1",
+            countryCode: "US",
+          }),
+          getRampTransfer: jest.fn().mockResolvedValue({
+            id: "rt_1",
+            status: "Pending",
+            usdcAmount: { value: 2500, currency: { code: "USD" } },
+            feeCollections: [{ amountCents: 200 }],
+          }),
+          withdrawToPaymentMethod,
+        })
+      )
+
+      await program.parseAsync([
+        "node",
+        "blaze",
+        "withdrawals",
+        "to-method",
+        "--amount",
+        "25",
+        "--yes",
+      ])
+
+      expect(withdrawToPaymentMethod).toHaveBeenCalledWith({
+        paymentMethodId: "pm_1",
+        usdcAmountInCents: 2500,
+        fiatAmountInCents: 2500,
+        currencyCode: "USD",
+        instantTransfer: false,
+      })
+      const output = getOutput()
+      expect(output).toContain(
+        "✓ Done — your withdrawal of 25.00 USD to Chase is on its way."
+      )
+      expect(output).toContain(
+        "We took a $2.00 fee, so $27.00 USDC left your balance."
+      )
+      expect(output).toContain("It usually arrives in 1–2 business days.")
+      expect(output).toContain(
+        "Track it anytime with: blaze withdrawals status rt_1"
+      )
+    })
+
+    it("blocks a withdrawal the fee pushes over balance and notes the fee in the message", async () => {
+      const exitSpy = jest.spyOn(process, "exit").mockImplementation((() => {
+        throw new Error("process.exit called")
+      }) as never)
+      const errorSpy = jest.spyOn(console, "error").mockImplementation(() => {})
+      const withdrawToPaymentMethod = jest.fn()
+      mockGetClient.mockResolvedValue(
+        createMockClient({
+          authContext: "consumer",
+          // Exactly enough for the amount, but NOT for amount + $2.00 fee.
+          getBalance: jest
+            .fn()
+            .mockResolvedValue({ available: 2500, pending: 0 }),
+          checkWithdrawalLimits: jest.fn().mockResolvedValue({
+            meetsMinimum: true,
+            isUnderLimit: true,
+            minimumAmountCents: 500,
+          }),
+          listConnectedPaymentMethods: jest.fn().mockResolvedValue({
+            methods: [
+              {
+                id: "pm_1",
+                type: "Bank",
+                displayName: "Chase",
+                canWithdraw: true,
+              },
+            ],
+            defaultWithdrawalMethodId: "pm_1",
+            countryCode: "US",
+          }),
+          withdrawToPaymentMethod,
+        })
+      )
+
+      await expect(
+        program.parseAsync([
+          "node",
+          "blaze",
+          "withdrawals",
+          "to-method",
+          "--amount",
+          "25",
+          "--yes",
+        ])
+      ).rejects.toThrow("process.exit called")
+
+      expect(errorSpy).toHaveBeenCalledWith(
+        expect.stringContaining("(including a $2.00 fee)")
+      )
+      expect(withdrawToPaymentMethod).not.toHaveBeenCalled()
+      exitSpy.mockRestore()
+      errorSpy.mockRestore()
+    })
+
+    it("rejects a below-minimum withdrawal with the server minimum and never submits", async () => {
+      const exitSpy = jest.spyOn(process, "exit").mockImplementation((() => {
+        throw new Error("process.exit called")
+      }) as never)
+      const errorSpy = jest.spyOn(console, "error").mockImplementation(() => {})
+      const withdrawToPaymentMethod = jest.fn()
+      mockGetClient.mockResolvedValue(
+        createMockClient({
+          authContext: "consumer",
+          getBalance: jest
+            .fn()
+            .mockResolvedValue({ available: 100000, pending: 0 }),
+          checkWithdrawalLimits: jest.fn().mockResolvedValue({
+            meetsMinimum: false,
+            isUnderLimit: true,
+            minimumAmountCents: 500,
+          }),
+          listConnectedPaymentMethods: jest.fn().mockResolvedValue({
+            methods: [
+              {
+                id: "pm_1",
+                type: "Bank",
+                displayName: "Chase",
+                canWithdraw: true,
+              },
+            ],
+            defaultWithdrawalMethodId: "pm_1",
+          }),
+          withdrawToPaymentMethod,
+        })
+      )
+
+      await expect(
+        program.parseAsync([
+          "node",
+          "blaze",
+          "withdrawals",
+          "to-method",
+          "--amount",
+          "1",
+          "--yes",
+        ])
+      ).rejects.toThrow("process.exit called")
+
+      expect(errorSpy).toHaveBeenCalledWith(
+        expect.stringContaining("Withdrawals must be at least $5.00 USD")
+      )
+      expect(withdrawToPaymentMethod).not.toHaveBeenCalled()
+      exitSpy.mockRestore()
+      errorSpy.mockRestore()
+    })
+
+    it("blocks on insufficient balance and never submits", async () => {
+      const exitSpy = jest.spyOn(process, "exit").mockImplementation((() => {
+        throw new Error("process.exit called")
+      }) as never)
+      const errorSpy = jest.spyOn(console, "error").mockImplementation(() => {})
+      const withdrawToPaymentMethod = jest.fn()
+      mockGetClient.mockResolvedValue(
+        createMockClient({
+          authContext: "consumer",
+          getBalance: jest
+            .fn()
+            .mockResolvedValue({ available: 100, pending: 0 }),
+          listConnectedPaymentMethods: jest.fn().mockResolvedValue({
+            methods: [
+              {
+                id: "pm_1",
+                type: "Bank",
+                displayName: "Chase",
+                canWithdraw: true,
+              },
+            ],
+            defaultWithdrawalMethodId: "pm_1",
+          }),
+          withdrawToPaymentMethod,
+        })
+      )
+
+      await expect(
+        program.parseAsync([
+          "node",
+          "blaze",
+          "withdrawals",
+          "to-method",
+          "--amount",
+          "25",
+          "--yes",
+        ])
+      ).rejects.toThrow("process.exit called")
+
+      expect(errorSpy).toHaveBeenCalledWith(
+        expect.stringContaining(
+          "You don't have enough balance for this withdrawal"
+        )
+      )
+      expect(withdrawToPaymentMethod).not.toHaveBeenCalled()
+      exitSpy.mockRestore()
+      errorSpy.mockRestore()
+    })
+
+    it("cancels without submitting when the user declines confirmation", async () => {
+      const { confirm } = jest.requireMock("@inquirer/prompts") as {
+        confirm: jest.Mock
+      }
+      confirm.mockResolvedValueOnce(false)
+      const withdrawToPaymentMethod = jest.fn()
+      mockGetClient.mockResolvedValue(
+        createMockClient({
+          authContext: "consumer",
+          getBalance: jest
+            .fn()
+            .mockResolvedValue({ available: 100000, pending: 0 }),
+          listConnectedPaymentMethods: jest.fn().mockResolvedValue({
+            methods: [
+              {
+                id: "pm_1",
+                type: "Bank",
+                displayName: "Chase",
+                canWithdraw: true,
+              },
+            ],
+            defaultWithdrawalMethodId: "pm_1",
+          }),
+          withdrawToPaymentMethod,
+        })
+      )
+
+      await program.parseAsync([
+        "node",
+        "blaze",
+        "withdrawals",
+        "to-method",
+        "--amount",
+        "25",
+      ])
+
+      expect(getOutput()).toContain("Cancelled.")
+      expect(withdrawToPaymentMethod).not.toHaveBeenCalled()
+    })
+
+    it("blocks withdrawing in business context with a personal-login error", async () => {
+      const exitSpy = jest.spyOn(process, "exit").mockImplementation((() => {
+        throw new Error("process.exit called")
+      }) as never)
+      const errorSpy = jest.spyOn(console, "error").mockImplementation(() => {})
+      const withdrawToPaymentMethod = jest.fn()
+      mockGetClient.mockResolvedValue(
+        createMockClient({ authContext: "business", withdrawToPaymentMethod })
+      )
+
+      await expect(
+        program.parseAsync([
+          "node",
+          "blaze",
+          "withdrawals",
+          "to-method",
+          "--amount",
+          "25",
+          "--yes",
+        ])
+      ).rejects.toThrow("process.exit called")
+
+      expect(errorSpy).toHaveBeenCalledWith(
+        expect.stringContaining("requires a personal login")
+      )
+      expect(withdrawToPaymentMethod).not.toHaveBeenCalled()
+      exitSpy.mockRestore()
+      errorSpy.mockRestore()
     })
   })
 
