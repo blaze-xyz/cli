@@ -6,18 +6,18 @@
  * `judgeAgentAnswer` grades whether the agent's final answer is grounded in the
  * tool results and satisfies the scenario's expected/forbidden output traits.
  *
- * Requires ANTHROPIC_API_KEY.
+ * Uses the configured LLM provider (direct Anthropic / Bedrock / Azure
+ * Foundry) via createClient().
  */
-import Anthropic from "@anthropic-ai/sdk"
-
-const JUDGE_MODEL = process.env.BLAZE_JUDGE_MODEL ?? "claude-sonnet-4-6"
+import { createClient, getDefaultModel } from "../src/agent/llm-provider"
 
 /** Call the judge model and extract the first JSON object from its reply. */
 export async function callJudge<T>(prompt: string): Promise<T> {
-  const client = new Anthropic()
+  const client = createClient()
+  const model = process.env.BLAZE_JUDGE_MODEL ?? getDefaultModel()
   const makeRequest = () =>
     client.messages.create({
-      model: JUDGE_MODEL,
+      model,
       max_tokens: 1024,
       temperature: 0,
       messages: [{ role: "user", content: prompt }],
