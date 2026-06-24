@@ -1,10 +1,16 @@
 import { Command } from "commander"
 import Table from "cli-table3"
 import stringWidth from "string-width"
-import { getClient, getGlobalOpts, handleError, withSpinner } from "../utils"
+import {
+  getClient,
+  getGlobalOpts,
+  handleError,
+  personalAccountLabel,
+  withSpinner,
+} from "../utils"
 import { formatOutput } from "../output"
 import { getAuth } from "../auth-utils"
-import { loadConfig } from "../../sdk/config"
+import { resolveAccountContext } from "../auth-context"
 
 function safeDesc(str: string): string {
   if (stringWidth(str) === actualTerminalWidth(str)) return str.substring(0, 30)
@@ -97,10 +103,10 @@ export function registerTransactionsCommands(program: Command): void {
           const globals = getGlobalOpts(program)
           const client = await getClient(globals)
 
-          // Determine context
-          const config = loadConfig()
-          const isPersonal =
-            globals.personal || (!globals.business && !config?.activeBusinessId)
+          // Determine context — mirror what getClient sends, honoring
+          // --personal / --business / BLAZE_PERSONAL / BLAZE_BUSINESS_ID / config.
+          const accountCtx = resolveAccountContext(globals)
+          const isPersonal = accountCtx.personal || !accountCtx.businessId
 
           // Personal mode uses /v1/payments (consumer transactions)
           if (isPersonal) {
@@ -121,9 +127,9 @@ export function registerTransactionsCommands(program: Command): void {
             }
 
             const auth = await getAuth()
-            const name = auth?.user?.blazetag || auth?.user?.email || "Personal"
+            const name = auth?.user?.blazetag || auth?.user?.email
             console.log("")
-            console.log(`  ${name} (Personal) — Recent Transactions`)
+            console.log(`  ${personalAccountLabel(name)} — Recent Transactions`)
             console.log("")
             if (personalResult.data.length === 0) {
               console.log("  No transactions yet.")
@@ -153,7 +159,7 @@ export function registerTransactionsCommands(program: Command): void {
             formatOutput(result.data, "json")
             return
           }
-          const businessId = globals.business || config?.activeBusinessId
+          const businessId = accountCtx.businessId
           let businessName = businessId || "Business"
           try {
             const bResult = await client.get<{

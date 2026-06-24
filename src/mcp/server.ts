@@ -1,41 +1,32 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js"
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js"
 import { BlazeClient } from "../sdk/client"
-import { resolveApiKey, resolveBaseUrl, loadConfig } from "../sdk/config"
-import { getAuthToken } from "../cli/auth-utils"
+import { resolveBaseUrl } from "../sdk/config"
+import { resolveCredential, resolveContextHeaders } from "../cli/auth-context"
 import { registerTools } from "./tools"
 
 async function main() {
-  const apiKey = resolveApiKey()
-  const bearerToken = await getAuthToken()
-  const config = loadConfig()
-  const activeBusinessId = config?.activeBusinessId
+  const credential = await resolveCredential()
 
-  if (!apiKey && !bearerToken) {
+  if (!credential) {
     process.stderr.write(
-      "Not authenticated. Run `blaze auth` to log in, or set BLAZE_API_KEY environment variable.\n"
+      "Not authenticated. Run `blaze auth` to log in, or set BLAZE_TOKEN (personal) " +
+        "or BLAZE_API_KEY (business).\n"
     )
     process.exit(1)
   }
 
-  const contextHeaders: Record<string, string> = {}
-  if (activeBusinessId) {
-    contextHeaders["x-business-id"] = activeBusinessId
-  }
+  const baseUrl = resolveBaseUrl()
+  const defaultHeaders = resolveContextHeaders()
 
-  const client = apiKey
-    ? new BlazeClient({
-        apiKey,
-        baseUrl: resolveBaseUrl(),
-        defaultHeaders:
-          Object.keys(contextHeaders).length > 0 ? contextHeaders : undefined,
-      })
-    : new BlazeClient({
-        bearerToken: bearerToken!,
-        baseUrl: resolveBaseUrl(),
-        defaultHeaders:
-          Object.keys(contextHeaders).length > 0 ? contextHeaders : undefined,
-      })
+  const client =
+    credential.kind === "bearer"
+      ? new BlazeClient({
+          bearerToken: credential.token,
+          baseUrl,
+          defaultHeaders,
+        })
+      : new BlazeClient({ apiKey: credential.apiKey, baseUrl, defaultHeaders })
 
   const server = new McpServer({
     name: "blaze",

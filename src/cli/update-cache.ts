@@ -15,6 +15,11 @@ export interface UpdateCheckCache {
   latest?: string
   /** The installed version at the time of the last check. */
   current?: string
+  /**
+   * A version the user explicitly declined to update to at the prompt. We won't
+   * prompt again for this exact version — only once a newer one is published.
+   */
+  dismissedVersion?: string
 }
 
 interface ConfigStore {

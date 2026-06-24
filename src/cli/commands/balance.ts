@@ -1,9 +1,15 @@
 import { Command } from "commander"
-import { getClient, getGlobalOpts, handleError, withSpinner } from "../utils"
+import {
+  getClient,
+  getGlobalOpts,
+  handleError,
+  personalAccountLabel,
+  withSpinner,
+} from "../utils"
 import { formatOutput } from "../output"
 import { CurrencyAmount } from "../../sdk/types"
 import { getAuth } from "../auth-utils"
-import { loadConfig } from "../../sdk/config"
+import { resolveAccountContext } from "../auth-context"
 
 function extractAmount(value: CurrencyAmount | number): number {
   return typeof value === "object" && value !== null ? value.amount : value
@@ -51,22 +57,22 @@ export function registerBalanceCommand(program: Command): void {
           maximumFractionDigits: 2,
         })
 
-        // Determine context label
-        const config = loadConfig()
-        const isPersonal =
-          globals.personal || (!globals.business && !config?.activeBusinessId)
+        // Determine context label — mirror exactly what getClient sends, honoring
+        // --personal / --business / BLAZE_PERSONAL / BLAZE_BUSINESS_ID / config.
+        const accountCtx = resolveAccountContext(globals)
+        const isPersonal = accountCtx.personal || !accountCtx.businessId
         let accountLabel: string
         let hint: string
 
         if (isPersonal) {
           const auth = await getAuth()
-          const name = auth?.user?.blazetag || auth?.user?.email || "Personal"
-          accountLabel = `${name} (Personal)`
+          const name = auth?.user?.blazetag || auth?.user?.email
+          accountLabel = personalAccountLabel(name)
           hint =
             "Showing personal balance. Use --business to see a business balance."
         } else {
           // Try to resolve business name
-          const businessId = globals.business || config?.activeBusinessId
+          const businessId = accountCtx.businessId
           let businessName = businessId || "Business"
           try {
             const result = await client.get<{

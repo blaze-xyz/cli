@@ -1,12 +1,6 @@
 import { BlazeClient } from "../sdk/client"
-import {
-  resolveApiKey,
-  resolveConfigApiKey,
-  resolveBaseUrl,
-  loadConfig,
-  saveConfig,
-} from "../sdk/config"
-import { getAuthToken } from "./auth-utils"
+import { resolveBaseUrl, loadConfig, saveConfig } from "../sdk/config"
+import { resolveCredential, resolveContextHeaders } from "./auth-context"
 
 interface SpinnerOpts {
   format?: string // skip spinner when format is "json"
@@ -73,71 +67,45 @@ export async function withSpinner<T>(
 
 export async function getClient(opts: {
   apiKey?: string
+  token?: string
   baseUrl?: string
   business?: string
   personal?: boolean
 }): Promise<BlazeClient> {
-  const config = loadConfig()
-  let activeBusinessId = config?.activeBusinessId
+  const baseUrl = resolveBaseUrl(opts.baseUrl)
+  const defaultHeaders = resolveContextHeaders(opts)
 
-  // CLI flag overrides
-  if (opts.personal) {
-    activeBusinessId = undefined
-  } else if (opts.business) {
-    activeBusinessId = opts.business
+  let credential
+  try {
+    credential = await resolveCredential(opts)
+  } catch (err) {
+    // Conflicting explicit credentials (--token + --api-key).
+    console.error(err instanceof Error ? err.message : String(err))
+    process.exit(1)
   }
 
-  // Build context headers
-  const contextHeaders: Record<string, string> = {}
-  if (opts.personal) {
-    contextHeaders["x-blaze-personal"] = "true"
-  } else if (activeBusinessId) {
-    contextHeaders["x-business-id"] = activeBusinessId
+  if (!credential) {
+    console.error(
+      "Not authenticated. Run `blaze auth` to log in, set BLAZE_TOKEN (personal) " +
+        "or BLAZE_API_KEY (business), or pass --token / --api-key."
+    )
+    process.exit(1)
   }
 
-  // Explicit API key (flag or env var) always wins
-  const explicitApiKey = resolveApiKey(opts.apiKey)
-  if (explicitApiKey) {
-    return new BlazeClient({
-      apiKey: explicitApiKey,
-      baseUrl: resolveBaseUrl(opts.baseUrl),
-      defaultHeaders:
-        Object.keys(contextHeaders).length > 0 ? contextHeaders : undefined,
-    })
-  }
-
-  // Active bearer token (from `blaze auth`) takes priority over config-file API key
-  const token = await getAuthToken()
-  if (token) {
-    return new BlazeClient({
-      bearerToken: token,
-      baseUrl: resolveBaseUrl(opts.baseUrl),
-      defaultHeaders:
-        Object.keys(contextHeaders).length > 0 ? contextHeaders : undefined,
-    })
-  }
-
-  // Fall back to config-file API key (from `blaze auth login --api-key`)
-  const configApiKey = resolveConfigApiKey()
-  if (configApiKey) {
-    return new BlazeClient({
-      apiKey: configApiKey,
-      baseUrl: resolveBaseUrl(opts.baseUrl),
-      defaultHeaders:
-        Object.keys(contextHeaders).length > 0 ? contextHeaders : undefined,
-    })
-  }
-
-  console.error(
-    "Not authenticated. Run `blaze auth` to log in or provide an API key with --api-key."
-  )
-  process.exit(1)
+  return credential.kind === "bearer"
+    ? new BlazeClient({
+        bearerToken: credential.token,
+        baseUrl,
+        defaultHeaders,
+      })
+    : new BlazeClient({ apiKey: credential.apiKey, baseUrl, defaultHeaders })
 }
 
 export function getGlobalOpts(program: {
   opts: () => Record<string, unknown>
 }): {
   apiKey?: string
+  token?: string
   baseUrl?: string
   format: "json" | "table"
   business?: string
@@ -146,6 +114,7 @@ export function getGlobalOpts(program: {
   const opts = program.opts()
   return {
     apiKey: opts.apiKey as string | undefined,
+    token: opts.token as string | undefined,
     baseUrl: opts.baseUrl as string | undefined,
     format: (opts.format as "json" | "table") ?? "table",
     business: opts.business as string | undefined,
@@ -155,16 +124,20 @@ export function getGlobalOpts(program: {
 
 export async function requireBusinessContext(opts: {
   apiKey?: string
+  token?: string
   baseUrl?: string
   business?: string
   personal?: boolean
 }): Promise<string> {
-  // If --business flag was passed, use that
-  if (opts.business) return opts.business
+  // Explicit business context: --business flag, then BLAZE_BUSINESS_ID env.
+  if (opts.business?.trim()) return opts.business.trim()
+  if (process.env.BLAZE_BUSINESS_ID?.trim()) {
+    return process.env.BLAZE_BUSINESS_ID.trim()
+  }
 
   // Check config
   const config = loadConfig()
-  if (config?.activeBusinessId) return config.activeBusinessId
+  if (config?.activeBusinessId?.trim()) return config.activeBusinessId.trim()
 
   // Try to auto-select if user has exactly one business
   try {
@@ -234,6 +207,15 @@ export function fail(message: string, format?: string): never {
     console.error(message)
   }
   process.exit(1)
+}
+
+/**
+ * Personal-account display label. Falls back to a single "Personal" when no
+ * identity is available (e.g. an injected BLAZE_TOKEN with no stored session),
+ * avoiding the redundant "Personal (Personal)".
+ */
+export function personalAccountLabel(name?: string): string {
+  return name ? `${name} (Personal)` : "Personal"
 }
 
 export { loadConfig as getConfig, saveConfig as writeConfig }

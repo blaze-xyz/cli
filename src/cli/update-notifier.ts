@@ -1,26 +1,37 @@
 /**
  * CLI update notifier.
  *
- * Gives users an npm-style "update available" prompt when a newer version of
- * the CLI is published, without ever slowing down or breaking their command.
+ * Gives users an interactive "a new version is available — update now?" prompt
+ * when a newer version of the CLI is published, without ever slowing down or
+ * breaking automated/non-interactive use.
  *
- * How it works (mirrors npm/yarn's `update-notifier`):
- *   1. On startup we read a locally cached "latest version" (instant, no I/O
- *      beyond a local config read). If it's newer than what's installed, we
- *      queue a notice to print at process exit — after the command's own output
- *      and to stderr, so piped/JSON stdout is never polluted.
- *   2. If that cache is older than the check interval (24h default), we spawn a
- *      DETACHED, unref'd background process to refresh it from the npm registry.
- *      The current command does not wait for it. The result surfaces next run.
+ * How it works:
+ *   1. A locally cached "latest version" is kept fresh by a DETACHED, unref'd
+ *      background process that refreshes it from the npm registry at most once
+ *      per check interval (24h default). The current command never waits for it
+ *      (the npm/`update-notifier` pattern), so startup is never slowed.
+ *   2. On startup we read that cache. If it shows a newer version than what's
+ *      installed, we prompt the user `y/N`. On "yes" we run `npm i -g <pkg>` for
+ *      them and exit so they can re-run on the new version. On "no" we remember
+ *      the declined version so we don't ask again until a newer one ships.
  *
- * Suppressed automatically for non-interactive use (piped output, CI,
- * `--format json`/`--json`) and via the standard `NO_UPDATE_NOTIFIER`
- * opt-out env var.
+ * The prompt is suppressed automatically for non-interactive use (piped output,
+ * CI, `--format json`/`--json`), on fast paths (`--version`/`--help`/`mcp`), and
+ * via the standard `NO_UPDATE_NOTIFIER` opt-out env var. When stdout is a TTY
+ * but stdin is not (so a prompt can't be answered), we fall back to a passive
+ * stderr notice instead.
  */
 import { spawn } from "node:child_process"
 import path from "node:path"
 
-import { readUpdateCache } from "./update-cache"
+import { readUpdateCache, writeUpdateCache } from "./update-cache"
+
+/**
+ * Default answer for the update prompt. `false` means hitting Enter skips the
+ * update (shown as `y/N`), so a stray keystroke never triggers a global install.
+ * Flip to `true` to make Enter accept (`Y/n`).
+ */
+const PROMPT_DEFAULT_ACCEPT = false
 
 /** Minimal structural type for the chalk color helpers we use. */
 type ColorFn = (text: string) => string
@@ -53,24 +64,134 @@ export async function checkForUpdates(
   try {
     const argv = opts.argv ?? process.argv
     if (isNotifierDisabled(argv)) return
+    if (isFastPathCommand(argv)) return
 
     const cache = await readUpdateCache()
 
-    // 1) Surface a known newer version (cheap, from local cache).
-    if (cache?.latest && isNewerVersion(cache.latest, opts.version)) {
-      const notice = await buildNotice(opts.version, cache.latest, opts.name)
-      registerExitNotice(notice)
-    }
-
-    // 2) Refresh the cache in the background if it's stale.
+    // 1) Refresh the cache in the background if it's stale (never blocks).
     const interval = getIntervalMs()
     const isStale = !cache || Date.now() - cache.lastCheck > interval
     if (isStale) {
       spawnBackgroundCheck(opts.name, opts.version)
     }
+
+    // 2) Nothing newer known locally → nothing to do this run.
+    const latest = cache?.latest
+    if (!latest || !isNewerVersion(latest, opts.version)) return
+
+    // 3) Respect a prior "no" for this exact version — don't nag every command.
+    if (cache?.dismissedVersion === latest) return
+
+    // 4) Can't run an interactive prompt without a TTY stdin (e.g. stdin piped):
+    //    fall back to a passive stderr notice so the user still learns of it.
+    if (!process.stdin.isTTY) {
+      registerExitNotice(await buildNotice(opts.version, latest, opts.name))
+      return
+    }
+
+    // 5) Prompt, and act on the answer.
+    const accepted = await promptForUpdate(opts.version, latest)
+
+    if (accepted) {
+      const updated = await runUpdate(opts.name, latest)
+      if (updated) {
+        process.stdout.write(
+          `You're all set on v${latest}. Re-run your command to pick it up.\n\n`
+        )
+        process.exit(0)
+      }
+      // Update failed — show how to do it by hand, then let their command run.
+      process.stderr.write(
+        `\nCouldn't update automatically. Run npm i -g ${opts.name} to update manually.\n\n`
+      )
+      return
+    }
+
+    // Declined — remember this version so we don't ask again until a newer one.
+    await writeUpdateCache({
+      lastCheck: cache?.lastCheck ?? Date.now(),
+      latest,
+      current: opts.version,
+      dismissedVersion: latest,
+    })
   } catch {
     // The update check must never affect the CLI. Swallow everything.
   }
+}
+
+/**
+ * Prompts the user to update now. Returns true if they accept. A cancelled
+ * prompt (Ctrl-C) is treated as "no" so the CLI never crashes on the prompt.
+ */
+async function promptForUpdate(
+  current: string,
+  latest: string
+): Promise<boolean> {
+  try {
+    const chalk = (await import("chalk")).default as ChalkLike
+    const { confirm } = await import("@inquirer/prompts")
+
+    // A short, friendly heading carries the version detail (in color) so the
+    // question itself can stay a clean one-liner.
+    process.stdout.write(
+      `\n✨ Blaze CLI ${chalk.green(`v${latest}`)} is available ` +
+        `${chalk.dim(`— you're on v${current}`)}\n`
+    )
+
+    return await confirm({
+      message: "Update now?",
+      default: PROMPT_DEFAULT_ACCEPT,
+    })
+  } catch {
+    // Ctrl-C / non-interactive stdin / any prompt error → treat as declined.
+    return false
+  }
+}
+
+/**
+ * Runs `npm install -g <name>@latest` with a spinner. Returns true on success.
+ * Never throws — a failed self-update must not break the user's command.
+ */
+async function runUpdate(name: string, latest: string): Promise<boolean> {
+  const ora = (await import("ora")).default
+  const spinner = ora({
+    text: `Updating to v${latest}…`,
+    color: "cyan",
+  }).start()
+
+  return await new Promise<boolean>(resolve => {
+    try {
+      const child = spawn("npm", ["install", "-g", `${name}@latest`], {
+        stdio: ["ignore", "ignore", "pipe"],
+        // npm is a .cmd shim on Windows and must be run via the shell there.
+        shell: process.platform === "win32",
+        windowsHide: true,
+      })
+
+      let stderr = ""
+      child.stderr?.on("data", chunk => {
+        stderr += String(chunk)
+      })
+      child.on("error", () => {
+        spinner.fail("Update failed.")
+        resolve(false)
+      })
+      child.on("close", code => {
+        if (code === 0) {
+          spinner.succeed(`Updated to v${latest} 🎉`)
+          resolve(true)
+          return
+        }
+        spinner.fail("Update didn't go through.")
+        const tail = stderr.trim().split("\n").slice(-3).join("\n")
+        if (tail) process.stderr.write(`${tail}\n`)
+        resolve(false)
+      })
+    } catch {
+      spinner.fail("Update failed.")
+      resolve(false)
+    }
+  })
 }
 
 /**
@@ -83,6 +204,20 @@ export function isNotifierDisabled(argv: string[]): boolean {
   if (process.env.NO_UPDATE_NOTIFIER) return true
   if (isJsonFormat(argv)) return true
   return false
+}
+
+/**
+ * Fast paths where we must never inject an interactive prompt: `--version` and
+ * `--help` should stay instant, and `mcp` runs a stdio server for a machine
+ * client that would hang on a prompt.
+ */
+export function isFastPathCommand(argv: string[]): boolean {
+  const args = argv.slice(2)
+  if (args[0] === "mcp") return true
+  return args.some(
+    arg =>
+      arg === "-V" || arg === "--version" || arg === "-h" || arg === "--help"
+  )
 }
 
 /** Detects `--format json`, `--format=json`, or `--json` in argv. */

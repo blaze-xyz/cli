@@ -40,7 +40,11 @@ program
   .name("blaze")
   .description("Blaze CLI — manage payments from the command line")
   .version(packageJson.version)
-  .option("--api-key <key>", "API key (overrides config)")
+  .option("--api-key <key>", "Business API key (overrides config)")
+  .option(
+    "--token <token>",
+    "Personal access token / JWT (overrides config); or set BLAZE_TOKEN"
+  )
   .option("--base-url <url>", "API base URL")
   .option("--format <format>", "Output format: json or table", "table")
   .option(
@@ -50,6 +54,10 @@ program
   .option(
     "--personal",
     "Override: use personal account (ignore active business)"
+  )
+  .option(
+    "--no-browser",
+    "Don't auto-open a browser during login (print the URL)"
   )
   .exitOverride()
 

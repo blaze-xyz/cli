@@ -55,6 +55,9 @@ async function main(): Promise<void> {
     // registry, so transient network failures don't silence the notifier.
     latest: latest ?? prev?.latest,
     current,
+    // Preserve a prior prompt dismissal so refreshing the cache never causes
+    // the user to be re-prompted for a version they already declined.
+    dismissedVersion: prev?.dismissedVersion,
   })
 }
 

@@ -159,22 +159,26 @@ See [docs/cli.md](docs/cli.md) for the full command reference.
 
 ### Staying Up to Date
 
-The CLI checks npm for a newer version in the background (at most once a day) and
-shows a one-line notice when an update is available:
+The CLI checks npm for a newer version in the background (at most once a day). When
+one is available, it asks you on startup whether you'd like to update:
 
 ```
-  ╭───────────────────────────────────────────╮
-  │                                             │
-  │  Update available 1.1.0 → 1.2.0             │
-  │  Run npm i -g @blaze-money/cli to update    │
-  │                                             │
-  ╰───────────────────────────────────────────╯
+✨ Blaze CLI v1.3.0 is available — you're on v1.2.0
+? Update now? (y/N)
 ```
 
-The check runs in a detached background process, so it never slows down or blocks
-your command. The notice is printed to stderr after your output, and is
+Answer `y` and the CLI runs `npm i -g @blaze-money/cli@latest` for you (with a
+spinner), then exits so you can re-run your command on the new version. Answer `N`
+(the default — just hit Enter) and it remembers your choice, so it won't ask again
+until an even newer version ships. If the update can't complete (e.g. a permissions
+error), it prints the manual command and lets your original command run.
+
+The registry check runs in a detached background process, so it never slows down
+your command. The prompt only appears in an interactive terminal and is
 automatically suppressed for non-interactive use (piped output, `--format json`,
-and CI). To opt out entirely, set `NO_UPDATE_NOTIFIER=1`.
+CI), on fast paths (`--version`, `--help`, `mcp`), and when stdin isn't a TTY (a
+passive one-line notice is shown instead). To opt out entirely, set
+`NO_UPDATE_NOTIFIER=1`.
 
 ---
 

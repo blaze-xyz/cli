@@ -3,6 +3,7 @@ import { BlazeClient } from "../../sdk/client"
 import { resolveBaseUrl, saveConfig, detectEnvironment } from "../../sdk/config"
 import { getClient, getConfig, handleError, writeConfig } from "../utils"
 import { getAuth, clearAuth, saveAuth, requireAuth } from "../auth-utils"
+import { isHeadless } from "../env.utils"
 
 interface DeviceCodeResponse {
   device_code: string
@@ -32,10 +33,9 @@ function sleep(ms: number): Promise<void> {
   return new Promise(resolve => setTimeout(resolve, ms))
 }
 
-async function browserLogin(): Promise<void> {
+async function browserLogin(opts: { noBrowser?: boolean } = {}): Promise<void> {
   const chalk = (await import("chalk")).default
   const ora = (await import("ora")).default
-  const open = (await import("open")).default
 
   const API_ENDPOINT = resolveBaseUrl()
 
@@ -49,6 +49,26 @@ async function browserLogin(): Promise<void> {
       )
     )
     return
+  }
+
+  const noBrowser = opts.noBrowser ?? false
+  const headless = noBrowser || isHeadless()
+
+  // Truly non-interactive (CI / piped output) → the device flow has no human to
+  // approve the code and would just poll until it times out. Fail fast with
+  // actionable guidance instead of hanging.
+  if (process.env.CI || !process.stdout.isTTY) {
+    console.error(
+      chalk.red(
+        "\n✗ Can't run interactive login here (no interactive terminal).\n"
+      ) +
+        "Authenticate on a machine with a browser, then bring the token here:\n" +
+        "  1. On your laptop:  blaze auth\n" +
+        "  2. Copy the token:  blaze auth token\n" +
+        "  3. Here:            export BLAZE_TOKEN=<token>   # personal + your businesses\n" +
+        "\nOr set BLAZE_API_KEY=<sk_...> for business-only access.\n"
+    )
+    process.exit(1)
   }
 
   const spinner = ora("Requesting device code...").start()
@@ -107,11 +127,24 @@ async function browserLogin(): Promise<void> {
     console.log(`Visit: ${chalk.cyan(deviceCode.verification_uri)}`)
     console.log(`\nEnter code: ${chalk.yellow.bold(deviceCode.user_code)}\n`)
 
-    try {
-      await open(deviceCode.verification_uri_complete)
-      console.log(chalk.dim("✓ Opened browser automatically\n"))
-    } catch {
-      console.log(chalk.dim("(Could not open browser automatically)\n"))
+    if (headless) {
+      console.log(
+        chalk.dim(
+          "Open the link above on any device to authorize, then come back here.\n"
+        )
+      )
+    } else {
+      try {
+        const open = (await import("open")).default
+        await open(deviceCode.verification_uri_complete)
+        console.log(chalk.dim("✓ Opened browser automatically\n"))
+      } catch {
+        console.log(
+          chalk.dim(
+            "(Couldn't open a browser — open the link above to authorize.)\n"
+          )
+        )
+      }
     }
 
     spinner.start("Waiting for authorization...")
@@ -272,7 +305,7 @@ export function registerAuthCommands(program: Command): void {
     .command("login")
     .description("Authenticate with Blaze (opens browser)")
     .action(async () => {
-      await browserLogin()
+      await browserLogin({ noBrowser: program.opts().browser === false })
     })
 
   // Top-level `blaze logout` alias
@@ -296,7 +329,7 @@ export function registerAuthCommands(program: Command): void {
     .command("auth")
     .description("Authenticate with Blaze via browser")
     .action(async () => {
-      await browserLogin()
+      await browserLogin({ noBrowser: program.opts().browser === false })
     })
 
   auth
@@ -309,7 +342,7 @@ export function registerAuthCommands(program: Command): void {
       const apiKey =
         opts.apiKey || (program.opts().apiKey as string | undefined)
       if (!apiKey) {
-        await browserLogin()
+        await browserLogin({ noBrowser: program.opts().browser === false })
         return
       }
       opts.apiKey = apiKey
@@ -359,6 +392,45 @@ export function registerAuthCommands(program: Command): void {
       console.log(`Blazetag: ${authData.user.blazetag || "N/A"}`)
       console.log(`User ID:  ${authData.user.id}`)
       console.log()
+    })
+
+  auth
+    .command("token")
+    .description(
+      "Print your access token (copy into BLAZE_TOKEN on a headless box)"
+    )
+    .option("--json", "Output as JSON")
+    .action(async (opts: { json?: boolean }) => {
+      const chalk = (await import("chalk")).default
+      const authData = await getAuth()
+
+      if (!authData?.access_token) {
+        console.error(chalk.red("\n✗ Not logged in. Run `blaze auth` first.\n"))
+        process.exit(1)
+      }
+
+      const expiresAt = authData.created_at + authData.expires_in * 1000
+      if (Date.now() > expiresAt) {
+        process.stderr.write(
+          "Warning: this token has expired — run `blaze auth` for a fresh one.\n"
+        )
+      }
+      // Warn on stderr so stdout stays a clean, copy-pasteable token.
+      process.stderr.write(
+        "Treat this token like a password — it grants access to your account.\n"
+      )
+
+      if (opts.json) {
+        console.log(
+          JSON.stringify({
+            access_token: authData.access_token,
+            token_type: authData.token_type,
+            expires_in: authData.expires_in,
+          })
+        )
+      } else {
+        console.log(authData.access_token)
+      }
     })
 
   auth

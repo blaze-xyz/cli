@@ -53,17 +53,24 @@ blaze auth logout
 
 ### Where Credentials Are Stored
 
-Browser-based authentication stores your OAuth token in:
+Browser-based authentication stores your OAuth token in a per-OS config file
+managed by the `conf` library:
 
-```
-~/.config/blaze-cli/config.json
-```
+- **macOS:** `~/Library/Preferences/blaze-cli-nodejs/config.json`
+- **Linux:** `~/.config/blaze-cli-nodejs/config.json` (or under `$XDG_CONFIG_HOME`)
+- **Windows:** `%APPDATA%\blaze-cli-nodejs\Config\config.json`
+
+Because that path is OS-specific and awkward to find by hand, use
+`blaze auth token` to print the token — e.g. to copy it into `BLAZE_TOKEN` on a
+headless box (see [Headless & Remote Environments](#headless--remote-environments)).
 
 The token:
 - Expires after 30 days
 - Is tied to your Blaze account
-- Automatically refreshes when needed
-- Can be revoked from your Blaze dashboard
+- Grants personal access **and** business access for any business you're a member of
+- Can be revoked by logging out (`blaze auth logout`)
+
+> **Note:** the token does **not** auto-refresh. After 30 days, run `blaze auth` again.
 
 ### Benefits of Browser-Based Auth
 
@@ -132,18 +139,91 @@ blaze auth login --api-key sk_test_your_key_here
 
 ---
 
+## Headless & Remote Environments
+
+The CLI works on machines with no browser — a VPS over SSH, cloud IDEs (GitHub
+Codespaces, Gitpod), cloud agents (OpenAI Codex, Cursor background agents, Devin),
+Docker, and CI.
+
+### Recommended: inject a personal token
+
+A personal token gives a headless agent the same access you have — personal **and**
+every business you belong to.
+
+```bash
+# 1. On a machine with a browser, log in:
+blaze auth
+
+# 2. Print your token:
+blaze auth token
+
+# 3. On the headless box, set it (ideally via a secret store):
+export BLAZE_TOKEN=<token>
+blaze whoami        # verify
+```
+
+Pick a context per command (or via env), exactly like an interactive session:
+
+```bash
+blaze me --personal                  # personal context
+blaze transfers --business biz_123   # a business you're a member of
+export BLAZE_BUSINESS_ID=biz_123     # default business context for this shell
+export BLAZE_PERSONAL=true           # force personal context
+```
+
+### Business-only automation
+
+For a machine that should act purely as one business, use a business API key
+(`BLAZE_API_KEY`) instead. It cannot reach personal/consumer endpoints.
+
+### Interactive remote shells (SSH, Codespaces terminal)
+
+You can still run `blaze auth` directly — the CLI detects a headless environment,
+**skips trying to open a browser**, and prints the URL + code for you to open on
+any device (e.g. your phone). Force this anywhere with `--no-browser`.
+
+### Non-interactive (CI, cron, no terminal)
+
+`blaze auth` needs a human to approve, so in CI / non-TTY contexts it fails fast
+with guidance instead of hanging. Set `BLAZE_TOKEN` (personal) or `BLAZE_API_KEY`
+(business) ahead of time.
+
+> **⚠️ Security — `BLAZE_TOKEN` is full-account access, including money movement.**
+> The personal CLI token is **not** read-only. After you've run `blaze auth` once,
+> Blaze holds a delegated signer for your wallet, so this token **alone** can
+> **send money, withdraw to a bank/card, and pay recipients** — with no further
+> approval or per-transaction prompt on the CLI path. Treat it like a
+> withdrawal-capable password:
+> - Only place it on a host/agent you fully trust. Prefer a secret store
+>   (Codespaces/Gitpod/Codex secrets, 1Password, CI secrets) over a plaintext env
+>   file, and an env var over a `--token` flag (flags leak via process lists/history).
+> - For an agent that only needs **business** data, mint a **read-only scoped
+>   business API key** (`BLAZE_API_KEY`) instead — that can be limited to read scopes.
+> - Scoped / read-only **personal** tokens are planned but not yet available
+>   (see `docs/projects/headless-cli-auth`). Until then, a personal `BLAZE_TOKEN`
+>   is all-or-nothing.
+> - `blaze auth logout` (or revoking the session) is the kill switch.
+
+---
+
 ## Authentication Resolution Order
 
-When the CLI needs credentials, it checks these sources in order:
+When the CLI needs credentials, it checks these sources in order (first match wins):
 
 ```
-1. --api-key flag              (if provided)
-2. BLAZE_API_KEY               (environment variable)
-3. ~/.config/blaze-cli/config.json  (OAuth token from browser auth)
-4. ~/.blaze/config.json        (legacy API key storage)
+1. --token <jwt>     flag    (personal access token / JWT)
+2. --api-key <key>   flag    (business API key)
+3. BLAZE_TOKEN       env     (personal access token / JWT)
+4. BLAZE_API_KEY     env     (business API key)
+5. stored OAuth session      (from `blaze auth`)
+6. ~/.blaze/config.json      (legacy API key from `blaze auth login --api-key`)
 ```
 
-The first valid credential found is used. If no credentials are found through any method, the command exits with an error prompting you to run `blaze auth`.
+A **personal token** (rows 1, 3, 5) authenticates as *you* — it acts personally
+and on behalf of any business you're a member of (switch with `--personal` /
+`--business <id>`). A **business API key** (rows 2, 4, 6) is scoped to a single
+business. If no credential is found, the command exits with guidance to run
+`blaze auth`.
 
 ---
 
@@ -151,7 +231,7 @@ The first valid credential found is used. If no credentials are found through an
 
 ### Browser-Based Auth Config
 
-**Location:** `~/.config/blaze-cli/config.json`
+**Location:** per-OS (see [Where Credentials Are Stored](#where-credentials-are-stored)) — e.g. `~/Library/Preferences/blaze-cli-nodejs/config.json` on macOS, `~/.config/blaze-cli-nodejs/config.json` on Linux.
 
 This file is created automatically when you run `blaze auth` (browser-based authentication).
 
@@ -213,7 +293,10 @@ This file is created when you run `blaze auth login --api-key` (deprecated).
 
 | Variable | Description |
 |----------|-------------|
-| `BLAZE_API_KEY` | API key for authentication |
+| `BLAZE_TOKEN` | Personal access token / JWT (personal + your businesses). **Full-account access incl. money movement** — see the security note above. Highest-priority env credential. |
+| `BLAZE_API_KEY` | Business API key (single-business scope). |
+| `BLAZE_BUSINESS_ID` | Default business context (sends `x-business-id`); same as `--business`. |
+| `BLAZE_PERSONAL` | Set to `true` to force personal context (sends `x-blaze-personal`); same as `--personal`. |
 | `BLAZE_BASE_URL` | Override the API base URL (defaults to `https://api.blaze.money`) |
 | `BLAZE_API_URL` | Deprecated alias for `BLAZE_BASE_URL`. Still accepted for back-compat. |
 
@@ -260,10 +343,12 @@ Balance: $1,250.00 USD (pending: $50.00)
 
 ## MCP Server Authentication
 
-When using the Blaze MCP server with AI assistants, the API key is provided through the MCP client configuration. The server reads the key from:
+When using the Blaze MCP server with AI assistants, credentials are provided through the MCP client configuration. The server resolves them with the same precedence as the CLI:
 
-1. The `BLAZE_API_KEY` environment variable (set in the MCP config).
-2. The `~/.blaze/config.json` file.
+1. `BLAZE_TOKEN` — a personal access token (personal + your businesses).
+2. `BLAZE_API_KEY` — a business API key.
+3. The stored OAuth session from `blaze auth`.
+4. The legacy `~/.blaze/config.json` API key.
 
 See [MCP Server Setup](./mcp.md) for configuration examples.
 
@@ -277,10 +362,10 @@ See [MCP Server Setup](./mcp.md) for configuration examples.
 
 **Log out when done.** If you're on a shared machine, run `blaze auth logout` to clear your credentials.
 
-**Protect config files.** The CLI stores tokens in `~/.config/blaze-cli/config.json`. Ensure this file has appropriate permissions:
+**Protect config files.** The CLI stores tokens in the per-OS config file (see [Where Credentials Are Stored](#where-credentials-are-stored)). Ensure it has appropriate permissions, e.g. on Linux:
 
 ```bash
-chmod 600 ~/.config/blaze-cli/config.json
+chmod 600 ~/.config/blaze-cli-nodejs/config.json
 ```
 
 ### For Programmatic Use (CI/CD, Servers)
@@ -298,7 +383,7 @@ env:
 ```
 # .gitignore
 .blaze/
-.config/blaze-cli/
+.config/blaze-cli-nodejs/
 ```
 
 **Use test keys during development.** Test keys (`sk_test_*`) operate in a sandbox environment and never move real funds. Only use live keys (`sk_live_*`) in production.
@@ -308,7 +393,7 @@ env:
 **Restrict key permissions.** Create API keys with only the scopes your application needs. A key that only needs to read transactions should not have write access to transfers.
 
 **Prefer OAuth tokens over API keys.** When possible, use browser-based authentication (`blaze auth`) rather than long-lived API keys. OAuth tokens:
-- Expire after 30 days (automatic rotation)
-- Can be revoked from your dashboard
+- Expire after 30 days (no auto-refresh — re-run `blaze auth` when they lapse)
+- Can be revoked by logging out (`blaze auth logout`)
 - Are tied to your user account (audit trail)
 - Don't require manual key management

@@ -24,6 +24,15 @@ __metadata:
   languageName: node
   linkType: hard
 
+"@anthropic-ai/foundry-sdk@npm:^0.4.0":
+  version: 0.4.0
+  resolution: "@anthropic-ai/foundry-sdk@npm:0.4.0"
+  dependencies:
+    "@anthropic-ai/sdk": "npm:>=0.50.3 <1"
+  checksum: 10c0/075a3f5ec14d6879c76219cbced0248b053dc7abb0fff015a9e6a716ecc11acd51abd5d2c85fa1d13c85d257c402c8dcab78033b51ab29fcedf9cbf13b89832a
+  languageName: node
+  linkType: hard
+
 "@anthropic-ai/sdk@npm:>=0.50.3 <1":
   version: 0.95.1
   resolution: "@anthropic-ai/sdk@npm:0.95.1"
@@ -1172,6 +1181,7 @@ __metadata:
   resolution: "@blaze-money/cli@workspace:."
   dependencies:
     "@anthropic-ai/bedrock-sdk": "npm:^0.26.0"
+    "@anthropic-ai/foundry-sdk": "npm:^0.4.0"
     "@anthropic-ai/sdk": "npm:^0.51.0"
     "@inquirer/prompts": "npm:^7.0.0"
     "@modelcontextprotocol/sdk": "npm:^1.0.0"
